@@ -115,10 +115,10 @@ class FeishuConfig(BaseModel):
 
 # LLM配置模型
 class LLMConfig(BaseModel):
-    provider: LLMProvider = LLMProvider.OPENAI
+    provider: LLMProvider 
     api_key: str = Field(..., description="API密钥")
-    base_url: Optional[str] = None
-    model: str = "gpt-3.5-turbo"
+    base_url: str
+    model: str 
     temperature: float = 0.7
     max_tokens: int = 2000
     timeout: int = 60
@@ -170,6 +170,26 @@ class HTTPClientConfig(BaseModel):
 class SecurityConfig(BaseModel):
     access_token_expire_minutes: int = 30
 
+class StorageConfig(BaseModel):
+    storage_type: str = Field(..., description="存储类型，例如'opendal'")
+    scheme: str = Field(..., description="存储方案，例如's3', 'oss', 'local'等")
+    file_path :str = Field(...,description="对于本地存储类型而言,存储文件的位置")
+
+class EmbeddingConfig(BaseModel):
+    """嵌入模型配置"""
+    model: str = Field(default="text-embedding-3-small", description="嵌入模型名称")
+    provider: str = Field(default="openai", description="嵌入模型提供方")
+    api_key: str = Field(..., description="嵌入模型API密钥")
+    base_url: str = Field(..., description="嵌入模型API基础URL")
+    dim: int = Field(default=1536, description="嵌入向量维度")
+
+class MilvusConfig(BaseModel):
+    """Milvus配置"""
+    uri: str = Field(default="http://localhost:19530", description="Milvus连接URI")
+    token: str = Field(default="root:Milvus", description="Milvus认证令牌")
+    db_name :str = Field(default="smartagent_db", description="Milvus数据库名称")
+    collection_name :str = Field(default="smartagent_collection", description="Milvus集合名称")
+    
 # 主配置模型
 class AppConfig(BaseModel):
     """应用主配置"""
@@ -177,14 +197,23 @@ class AppConfig(BaseModel):
     debug: bool = False
     
     # 各模块配置
-    feishu: FeishuConfig
-    llm: LLMConfig
+    feishu: FeishuConfig = Field(default_factory=FeishuConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
     postgres_database: PostgresDatabaseConfig = Field(default_factory=PostgresDatabaseConfig)
     tavily_api_key: str = Field(..., description="Tavily API密钥")
     server: ServerConfig = Field(default_factory=ServerConfig)
     security: SecurityConfig
-    http_client_config: HTTPClientConfig = Field(default_factory=HTTPClientConfig)
+    http_client: HTTPClientConfig = Field(default_factory=HTTPClientConfig)
     logging: LoggingConfig
+
+    # 添加存储config
+    storage : Optional[StorageConfig]=None
+    # 添加嵌入模型配置
+    embedding : Optional[EmbeddingConfig]=Field(default_factory=EmbeddingConfig)
+    # 添加Milvus配置
+    milvus : Optional[MilvusConfig]=Field(default_factory=MilvusConfig)
+
+
 
 from dataclasses import dataclass
 

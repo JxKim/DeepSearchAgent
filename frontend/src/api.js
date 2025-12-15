@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { handleApiError, createSafeApiCall } from './utils/errorHandler';
 
 // 创建axios实例
 const api = axios.create({
@@ -37,12 +38,35 @@ api.interceptors.response.use(
         // 令牌过期或无效，清除本地存储并跳转到登录页面
         localStorage.removeItem('user');
         localStorage.removeItem('token');
-        // 刷新页面或跳转到登录页
-        window.location.reload();
+        // 显示认证错误提示
+        handleApiError(error, { showModal: true });
       }
     }
     return Promise.reject(error);
   }
 );
 
-export default api;
+// 创建安全的API调用包装器
+const safeApiCall = createSafeApiCall;
+
+// 安全的API方法
+export const safeApi = {
+  get: (url, config) => safeApiCall(api.get, { showMessage: true })(url, config),
+  post: (url, data, config) => safeApiCall(api.post, { showMessage: true })(url, data, config),
+  put: (url, data, config) => safeApiCall(api.put, { showMessage: true })(url, data, config),
+  delete: (url, config) => safeApiCall(api.delete, { showMessage: true })(url, config),
+  patch: (url, data, config) => safeApiCall(api.patch, { showMessage: true })(url, data, config)
+};
+
+// 暂停生成接口
+export const stopGeneration = async (sessionId) => {
+  return safeApiCall(api.post, { 
+    showMessage: true,
+    customMessage: '暂停生成失败，请稍后重试'
+  })(`/sessions/${sessionId}/stop`);
+};
+
+// 导出原始API（用于需要自定义错误处理的场景）
+export { api as rawApi };
+
+export default safeApi;

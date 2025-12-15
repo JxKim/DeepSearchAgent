@@ -75,3 +75,46 @@ create unique index ix_users_username
 create index ix_users_id
     on users (id);
 
+## 知识库相关数据表：
+
+drop table if exists knowledge_files;
+create table knowledge_files
+(
+    id          varchar                  not null
+        primary key,
+    user_id     varchar                  not null,
+    file_name   varchar                  not null,
+    file_size   integer                  not null,
+    file_type   varchar                  not null,
+    storage_path varchar                 not null,
+    is_parsed   boolean                  default false,
+    parse_status varchar                 default 'pending',
+    chunk_count integer                  default 0,
+    created_at  timestamp with time zone default now(),
+    updated_at  timestamp with time zone default now()
+);
+
+alter table knowledge_files
+    owner to smartagent_user;
+
+create index ix_knowledge_files_user_id
+    on knowledge_files (user_id);
+
+drop table if exists knowledge_chunks;
+create table knowledge_chunks
+(
+    id              varchar                  not null
+        primary key,
+    file_id         varchar                  not null,
+    chunk_index     integer                  not null,
+    content         text                     not null,
+    meta_info       json,
+    vector_id       bigint, 
+    created_at      timestamp with time zone default now()
+);
+
+alter table knowledge_chunks
+    owner to smartagent_user;
+
+create index ix_knowledge_chunks_file_id
+    on knowledge_chunks (file_id);

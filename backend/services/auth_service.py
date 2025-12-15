@@ -10,8 +10,8 @@ from routes.schema import (
     User, UserCreate, UserUpdate, LoginRequest, Token,
     BaseResponse, UserListResponse
 )
-from models.db_models import User as DBUser, Token as DBToken
-from database import SessionLocal
+from db.db_models import User as DBUser, Token as DBToken
+from db.database import SessionLocal
 from config.loguru_config import get_logger
 from config.loader import get_config
 logger = get_logger(__name__)

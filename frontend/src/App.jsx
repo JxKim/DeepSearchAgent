@@ -1,13 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import api from './api';
+// 渲染tab+点击高亮实现
+// lodash 可以实现排序功能
+// 什么叫做获取DOM
+import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+// 样式控制：行内样式，或者是通过CSS来控制样式，然后去引入，通过className的方式来
 import './App.css';
-import Login from './components/Login';
+import './components/DeleteNotification.css';
+import './components/LoginButton.css';
+import Login from './components/Login.jsx';
+import UserProfile from './components/UserProfile.jsx';
+import SearchPage from './components/SearchPage.jsx';
+import api, { stopGeneration } from './api.js';
+import { handleApiError } from './utils/errorHandler';
+import { message, Input, Button, Space, Typography, Dropdown } from 'antd';
+import { SendOutlined, PauseOutlined, LoadingOutlined, UserOutlined, MenuOutlined, SearchOutlined, EditOutlined, ShareAltOutlined, PushpinOutlined, DeleteOutlined } from '@ant-design/icons';
+
+// 在react中，一个组件就是一个首字母大写的函数，内部存放了组件的逻辑和视图UI，渲染组件只需要
+// 只要是个函数，不管是什么形式，例如是通过function形式定义的，或者是通过箭头匿名函数，也行
 
 function App() {
+  // useState执行之后的结果是数组，user是状态变量，setUser是修改状态变量的方法：通过状态变量，驱动视图变化
   // 用户认证状态
   const [user, setUser] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   
   // 聊天历史记录状态
   const [chatHistory, setChatHistory] = useState([]);
@@ -27,6 +43,20 @@ function App() {
   
   // 跟踪哪些AI消息的tool_messages是展开的
   const [expandedToolMessages, setExpandedToolMessages] = useState({});
+  
+  // 暂停生成功能相关状态
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [currentStreamController, setCurrentStreamController] = useState(null);
+  const [pausedMessageId, setPausedMessageId] = useState(null);
+
+  // 侧边栏折叠状态
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // 搜索页面显示状态
+  const [showSearch, setShowSearch] = useState(false);
+
+  // 删除提示状态
+  const [deleteNotification, setDeleteNotification] = useState(null);
 
   // 获取聊天会话历史
   const fetchChatSessions = async () => {
@@ -41,7 +71,11 @@ function App() {
         handleSelectSession(sessions[0].id);
       }
     } catch (error) {
-      console.error('获取聊天会话失败:', error);
+      console.log(error);
+      handleApiError(error, { 
+        showMessage: true,
+        customMessage: '获取聊天会话失败'
+      });
     }
   };
 
@@ -51,14 +85,43 @@ function App() {
       const response = await api.get(`/sessions/${sessionId}/messages`);
       setCurrentChat(response.data);
     } catch (error) {
-      console.error('获取会话消息失败:', error);
+      console.log(error);
+      handleApiError(error, { 
+        showMessage: true,
+        customMessage: '获取会话消息失败'
+      });
     }
   };
 
   // 处理选择会话
   const handleSelectSession = async (sessionId) => {
     setSelectedSessionId(sessionId);
+    setShowSearch(false); // 选中会话后关闭搜索页面
     await fetchSessionMessages(sessionId);
+  };
+
+  // 暂停生成
+  const handleStopGeneration = async () => {
+    if (!isGenerating || !selectedSessionId) return;
+
+    try {
+      // 中断流式响应
+      if (currentStreamController) {
+        currentStreamController.abort();
+        setCurrentStreamController(null);
+      }
+
+      // 调用后端暂停接口
+      await stopGeneration(selectedSessionId);
+      
+      // 更新状态
+      setIsGenerating(false);
+      setPausedMessageId(null);
+      
+      message.success('生成已暂停');
+    } catch (error) {
+      // stopGeneration已经内置了错误处理，这里不需要重复处理
+    }
   };
 
   // 发送新消息
@@ -101,8 +164,15 @@ function App() {
         tool_messages: [] // 兼容旧格式
       }]);
       
+      // 创建AbortController用于中断流式响应
+      const abortController = new AbortController();
+      setCurrentStreamController(abortController);
+      setIsGenerating(true);
+      setPausedMessageId(aiMessageId);
+
       // 使用fetch API直接处理流式响应，不使用axios
-      const response = await fetch(`http://localhost:8000/api/sessions/${selectedSessionId}/messages/`, {
+      const baseURL = import.meta.env.VITE_API_URL;
+      const response = await fetch(`${baseURL}/sessions/${selectedSessionId}/messages/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -113,6 +183,7 @@ function App() {
           metadata: {},
           sender: 'user'
         }),
+        signal: abortController.signal,
         // credentials: 'include', // 发送凭据，处理CORS
         // mode: 'cors' // 显式设置为cors模式
       });
@@ -193,8 +264,8 @@ function App() {
                 break;
               }
             } catch (error) {
-              console.error('解析SSE数据失败:', error);
-              // 继续处理下一行，避免整个应用崩溃
+              // 解析SSE数据失败，继续处理下一行，避免整个应用崩溃
+              // 这里不显示用户提示，因为这是内部数据处理错误
             }
           }
         }
@@ -216,9 +287,21 @@ function App() {
             }) }
           : session
       ));
+      
+      // 重置生成状态
+      setIsGenerating(false);
+      setCurrentStreamController(null);
+      setPausedMessageId(null);
     } catch (error) {
-      console.error('发送消息失败:', error);
-      // 可以添加错误处理，比如显示错误消息
+      // 使用统一的错误处理系统
+      handleApiError(error, { 
+        showMessage: true,
+        customMessage: '发送消息失败，请稍后重试'
+      });
+      // 重置生成状态
+      setIsGenerating(false);
+      setCurrentStreamController(null);
+      setPausedMessageId(null);
     }
   };
 
@@ -228,7 +311,8 @@ function App() {
 
     try {
       // 调用后端工具调用接口
-      const response = await fetch(`http://localhost:8000/api/sessions/${selectedSessionId}/messages/tools`, {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+      const response = await fetch(`${baseURL}/sessions/${selectedSessionId}/messages/tools`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -311,8 +395,8 @@ function App() {
                 }
               }
             } catch (error) {
-              console.error('解析SSE数据失败:', error);
-              // 继续处理下一行，避免整个应用崩溃
+              // 解析SSE数据失败，继续处理下一行，避免整个应用崩溃
+              // 这里不显示用户提示，因为这是内部数据处理错误
             }
           }
         }
@@ -348,7 +432,11 @@ function App() {
         );
       });
     } catch (error) {
-      console.error('处理工具调用失败:', error);
+      // 使用统一的错误处理系统
+      handleApiError(error, { 
+        showMessage: true,
+        customMessage: '处理工具调用失败'
+      });
     }
   };
 
@@ -366,16 +454,11 @@ function App() {
       // 选择新创建的会话
       handleSelectSession(newSession.id);
     } catch (error) {
-      console.error('创建会话失败:', error);
-      // 打印完整的错误信息，方便调试
-      if (error.response) {
-        console.error('响应状态:', error.response.status);
-        console.error('响应数据:', error.response.data);
-      } else if (error.request) {
-        console.error('请求:', error.request);
-      } else {
-        console.error('请求错误:', error.message);
-      }
+      // 使用统一的错误处理系统
+      handleApiError(error, { 
+        showMessage: true,
+        customMessage: '创建会话失败'
+      });
     }
   };
 
@@ -406,9 +489,10 @@ function App() {
         // 如果用户已登录，获取会话列表
         fetchChatSessions();
       } catch (error) {
-        console.error('解析用户信息失败:', error);
+        // 解析用户信息失败，清除本地存储
         localStorage.removeItem('user');
         localStorage.removeItem('token');
+        // 这里不显示错误提示，因为这是初始化时的内部错误
       }
     }
   }, []); // 空依赖数组，只在组件挂载时执行一次
@@ -435,115 +519,309 @@ function App() {
     }));
   };
 
+  // 删除会话
+  const handleDeleteSession = async (e, sessionId) => {
+    e.stopPropagation(); // 阻止冒泡
+    const sessionToDelete = chatHistory.find(s => s.id === sessionId);
+    try {
+      await api.delete(`/sessions/${sessionId}`);
+      
+      // 更新本地状态
+      setChatHistory(prev => prev.filter(session => session.id !== sessionId));
+      
+      // 如果删除的是当前选中的会话，则清除选中状态或选择另一个
+      if (selectedSessionId === sessionId) {
+        setSelectedSessionId(null);
+        setCurrentChat([]);
+      }
+      
+      // 显示左下角删除提示
+      setDeleteNotification(`已删除“${sessionToDelete?.title || '会话'}”`);
+      
+      // 3秒后自动消失
+      setTimeout(() => {
+        setDeleteNotification(null);
+      }, 3000);
+      
+    } catch (error) {
+      handleApiError(error, { 
+        showMessage: true, 
+        customMessage: '删除会话失败' 
+      });
+    }
+  };
+
+  // 切换侧边栏折叠状态
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(!isSidebarCollapsed);
+  };
+
   return (
     <div className="app-container">
-      <div className="chat-layout">
-        {/* 左侧聊天历史记录 */}
-        <div className="chat-history">
-          <div className="history-header">
-            <h2>聊天历史</h2>
-            <button onClick={handleCreateSession} className="new-session-btn">新建会话</button>
-          </div>
-          <div className="history-list">
-            {chatHistory.map(chat => (
-              <div 
-                key={chat.id} 
-                className={`history-item ${selectedSessionId === chat.id ? 'active' : ''}`}
-                onClick={() => handleSelectSession(chat.id)}
-              >
-                <div className="history-title">{chat.title}</div>
-                <div className="history-preview">{chat.lastMessage}</div>
-                <div className="history-time">{chat.timestamp}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+      {showProfile ? (
+        <UserProfile user={user} onClose={() => setShowProfile(false)} />
+      ) : (
+        <div className="chat-layout">
+          {/* 左侧聊天历史记录 - 侧边栏 */}
+          <div className={`chat-history ${isSidebarCollapsed ? 'collapsed' : ''}`}>
+            {/* 顶部工具栏：汉堡菜单 + 搜索 */}
+            <div className="sidebar-header-tools">
+              <Button 
+                type="text" 
+                icon={<MenuOutlined />} 
+                className="icon-btn menu-btn" 
+                onClick={toggleSidebar}
+              />
+              {!isSidebarCollapsed && (
+                <Button 
+                  type="text" 
+                  icon={<SearchOutlined />} 
+                  className="icon-btn search-btn" 
+                  onClick={() => setShowSearch(true)}
+                />
+              )}
+            </div>
 
-        {/* 右侧当前聊天窗口 */}
-        <div className="chat-window">
-          <div className="chat-header">
-            <h2>{chatHistory.find(s => s.id === selectedSessionId)?.title || '请选择会话'}</h2>
-            <div className="user-info">
-              {user ? (
-                <div className="user-menu">
-                  <span className="username">欢迎，{user.username}</span>
-                  <button onClick={handleLogout} className="logout-btn">登出</button>
-                </div>
-              ) : (
-                <button 
-                  onClick={() => setShowLogin(true)} 
-                  className="login-btn"
-                >
-                  登录
-                </button>
+            {/* 发起新对话按钮 */}
+            <div className="new-chat-wrapper">
+              <Button 
+                type="text" 
+                icon={<EditOutlined />} 
+                className={`new-chat-btn ${isSidebarCollapsed ? 'collapsed' : ''}`}
+                onClick={handleCreateSession}
+              >
+                {!isSidebarCollapsed && '发起新对话'}
+              </Button>
+            </div>
+
+            {/* 对话列表区域 */}
+            <div className="history-list-container">
+              {!isSidebarCollapsed && <div className="history-section-title">对话</div>}
+              {!isSidebarCollapsed && (
+                <div className="history-list">
+                  {chatHistory.map(chat => (
+                    <div 
+                      key={chat.id} 
+                      className={`history-item ${selectedSessionId === chat.id ? 'active' : ''}`}
+                      onClick={() => handleSelectSession(chat.id)}
+                    >
+                    <div className="history-title-row">
+                      <div className="history-title">{chat.title}</div>
+                      <div className="history-actions">
+                        <Dropdown
+                          menu={{
+                            items: [
+                              {
+                                key: 'share',
+                                label: '分享对话内容',
+                                icon: <ShareAltOutlined />
+                              },
+                              {
+                                key: 'pin',
+                                label: '固定',
+                                icon: <PushpinOutlined />
+                              },
+                              {
+                                key: 'rename',
+                                label: '重命名',
+                                icon: <EditOutlined />
+                              },
+                              {
+                                key: 'delete',
+                                label: '删除',
+                                icon: <DeleteOutlined />,
+                                onClick: (e) => handleDeleteSession(e.domEvent, chat.id)
+                              }
+                            ]
+                          }}
+                          trigger={['click']}
+                          placement="bottomRight"
+                          overlayClassName="custom-dropdown"
+                        >
+                          <button 
+                            className="more-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // 阻止事件冒泡，防止触发选中会话
+                            }}
+                          >
+                            <svg viewBox="64 64 896 896" focusable="false" data-icon="more" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M456 231a56 56 0 10112 0 56 56 0 10-112 0zm0 280a56 56 0 10112 0 56 56 0 10-112 0zm0 280a56 56 0 10112 0 56 56 0 10-112 0z"></path></svg>
+                          </button>
+                        </Dropdown>
+                      </div>
+                    </div>
+                    {/* <div className="history-time">{chat.timestamp}</div> */}
+                  </div>
+                ))}
+              </div>
               )}
             </div>
           </div>
-          <div className="chat-messages">
-            {currentChat.map(message => (
-              <div key={message.id} className={`message ${message.sender}`}>
-                <div className="message-text">
-                  {message.sender === 'agent' ? (
-                    <>
-                      {/* 按照sections数组的顺序渲染每个消息段落 */}
-                      {message.sections && message.sections.length > 0 ? (
-                        message.sections.map((section, index) => (
-                          <React.Fragment key={`${message.id}-${section.type}-${index}`}>
-                            {section.type === 'ai_message' ? (
-                              /* 渲染AI消息文本 */
-                              <ReactMarkdown>{section.content}</ReactMarkdown>
-                            ) : (section.type === 'tool_message' && (
-                              /* 渲染可折叠的工具消息，每个工具消息一个独立窗口 */
-                              <div className="tool-messages-container">
-                                <button 
-                                  className="tool-messages-toggle"
-                                  onClick={() => toggleToolMessages(`${message.id}-tool-${index}`)}
-                                >
-                                  {expandedToolMessages[`${message.id}-tool-${index}`] ? '▼ 收起工具消息' : '▶ 查看工具消息'}
-                                </button>
-                                {expandedToolMessages[`${message.id}-tool-${index}`] && (
-                                  <div className="tool-messages-content">
-                                    <div className="tool-message">
-                                      <pre>{JSON.stringify(section.content, null, 2)}</pre>
-                                    </div>
-                                  </div>
+
+          {/* 右侧当前聊天窗口或搜索页面 */}
+          <div className="chat-window">
+            {showSearch ? (
+              <SearchPage 
+                sessions={chatHistory} 
+                onSelectSession={handleSelectSession} 
+              />
+            ) : (
+              <>
+                <div className="chat-header">
+                  <h2 className="chat-header-title">
+                    {chatHistory.find(s => s.id === selectedSessionId)?.title || '请选择一个会话'}
+                  </h2>
+                  <div className="user-info">
+                    {user ? (
+                      <Space>
+                        <div 
+                          className="user-avatar"
+                          onClick={() => setShowProfile(true)}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '50%',
+                            backgroundColor: '#1677ff', // 基本色
+                            color: '#fff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          {user.username.charAt(0).toUpperCase()}
+                        </div>
+                      </Space>
+                    ) : (
+                      <Button 
+                        className="login-btn"
+                        onClick={() => setShowLogin(true)}
+                      >
+                        登录
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                
+                {currentChat.length === 0 ? (
+                  <div className="welcome-screen">
+                    <h1 className="welcome-title">需要我为你研究些什么？</h1>
+                  </div>
+                ) : (
+                  <div className="chat-messages">
+                    {currentChat.map((message, index) => (
+                      <div key={message.id} className={`message ${message.sender}`}>
+                        <div className="message-content-wrapper">
+                          {message.sender === 'agent' && (
+                            <div className="avatar">
+                              {isGenerating && index === currentChat.length - 1 ? (
+                                <div className="agent-avatar-loading">
+                                  <div className="agent-avatar-loading-icon">✦</div>
+                                </div>
+                              ) : (
+                                <div className="agent-avatar-completed">
+                                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill={`url(#paint0_linear_${message.id})`} />
+                                    <defs>
+                                      <linearGradient id={`paint0_linear_${message.id}`} x1="12" y1="2" x2="12" y2="21.02" gradientUnits="userSpaceOnUse">
+                                        <stop stopColor="#4285F4"/>
+                                        <stop offset="1" stopColor="#9B72CB"/>
+                                      </linearGradient>
+                                    </defs>
+                                  </svg>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <div className="message-text">
+                            {message.sender === 'agent' ? (
+                              <>
+                                {/* 按照sections数组的顺序渲染每个消息段落 */}
+                                
+                                {message.sections && message.sections.length > 0 ? (
+                                  message.sections.map((section, index) => (
+                                    <React.Fragment key={`${message.id}-${section.type}-${index}`}>
+                                      {section.type === 'ai_message' ? (
+                                        /* 渲染AI消息文本 */
+                                        <ReactMarkdown>{section.content}</ReactMarkdown>
+                                      ) : (section.type === 'tool_message' && (
+                                        /* 渲染可折叠的工具消息，每个工具消息一个独立窗口 */
+                                        <div className="tool-messages-container">
+                                          <button 
+                                            className="tool-messages-toggle"
+                                            onClick={() => toggleToolMessages(`${message.id}-tool-${index}`)}
+                                          >
+                                            {expandedToolMessages[`${message.id}-tool-${index}`] ? '▼ 收起工具消息' : '▶ 查看工具消息'}
+                                          </button>
+                                          {expandedToolMessages[`${message.id}-tool-${index}`] && (
+                                            <div className="tool-messages-content">
+                                              <div className="tool-message">
+                                                <pre>{JSON.stringify(section.content, null, 2)}</pre>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </React.Fragment>
+                                  ))
+                                ) : (
+                                  /* 兼容旧格式的AI消息 */
+                                  <ReactMarkdown>{message.text || ''}</ReactMarkdown>
                                 )}
-                              </div>
-                            ))}
-                          </React.Fragment>
-                        ))
-                      ) : (
-                        /* 兼容旧格式的AI消息 */
-                        <ReactMarkdown>{message.text || ''}</ReactMarkdown>
-                      )}
-                    </>
-                  ) : (
-                    message.text
+                              </>
+                            ) : (
+                              message.text
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="chat-input">
+                  {/* 生成指示器 - 使用Ant Design组件 */}
+                  {isGenerating && (
+                    <div className="generation-controls">
+                      <Space size="small">
+                        <LoadingOutlined style={{ color: 'var(--primary-color)' }} />
+                        <Typography.Text style={{ color: 'var(--text-secondary)' }}>AI正在生成中...</Typography.Text>
+                      </Space>
+                    </div>
                   )}
+                  
+                  <div className="message-input-container">
+                    <Button 
+                      type="text"
+                      shape="circle"
+                      icon={<span style={{ fontSize: '1.2rem' }}>＋</span>}
+                      className="input-action-btn"
+                    />
+                    <Input 
+                      placeholder="DeepSearch一下" 
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      disabled={!selectedSessionId || isGenerating}
+                      size="large"
+                      variant="borderless"
+                    />
+                    <Button 
+                      type={isGenerating ? "text" : "text"}
+                      icon={isGenerating ? <PauseOutlined /> : <SendOutlined />}
+                      onClick={isGenerating ? handleStopGeneration : handleSendMessage}
+                      disabled={!selectedSessionId || (!newMessage.trim() && !isGenerating)}
+                      className={`send-btn ${newMessage.trim() ? 'active' : ''}`}
+                    />
+                  </div>
                 </div>
-                <div className="message-time">
-                  {message.timestamp ? new Date(message.timestamp).toLocaleTimeString('zh-CN', { 
-                    hour: '2-digit', 
-                    minute: '2-digit', 
-                    second: '2-digit' 
-                  }) : ''}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="chat-input">
-            <input 
-              type="text" 
-              placeholder={selectedSessionId ? "输入消息..." : "请先选择一个会话"} 
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              disabled={!selectedSessionId}
-            />
-            <button onClick={handleSendMessage} disabled={!selectedSessionId}>发送</button>
+              </>
+            )}
           </div>
         </div>
-      </div>
+      )}
 
       {/* 登录模态框 */}
       {showLogin && (
@@ -557,12 +835,14 @@ function App() {
       {showFuncCallModal && currentFuncCall && typeof currentFuncCall === 'object' && (
         <div className="func-call-modal-overlay">
           <div className="func-call-modal">
-            <h3>函数调用请求</h3>
+            <Typography.Title level={3} style={{ textAlign: 'center', marginBottom: '20px' }}>
+              函数调用请求
+            </Typography.Title>
             <div className="func-call-content">
-              <p>AI请求调用以下函数：</p>
+              <Typography.Paragraph>AI请求调用以下函数：</Typography.Paragraph>
               <div className="func-call-details">
-                <p><strong>函数名称：</strong>send_email</p>
-                <p><strong>参数：</strong></p>
+                <Typography.Paragraph><strong>函数名称：</strong>send_email</Typography.Paragraph>
+                <Typography.Paragraph><strong>参数：</strong></Typography.Paragraph>
                 <ul>
                   {Object.entries(currentFuncCall).map(([key, value]) => (
                     <li key={key}>
@@ -572,19 +852,39 @@ function App() {
                 </ul>
               </div>
             </div>
-            <div className="func-call-buttons">
-              <button className="func-call-approve" onClick={async () => {
-                // 同意按钮点击事件
-                setShowFuncCallModal(false);
-                await handleToolCall(true);
-              }}>同意</button>
-              <button className="func-call-reject" onClick={async () => {
-                // 拒绝按钮点击事件
-                setShowFuncCallModal(false);
-                await handleToolCall(false);
-              }}>拒绝</button>
-            </div>
+            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+              <Button 
+                type="primary" 
+                size="large"
+                style={{ flex: 1, marginRight: '10px' }}
+                onClick={async () => {
+                  // 同意按钮点击事件
+                  setShowFuncCallModal(false);
+                  await handleToolCall(true);
+                }}
+              >
+                同意
+              </Button>
+              <Button 
+                type="default" 
+                size="large"
+                style={{ flex: 1 }}
+                onClick={async () => {
+                  // 拒绝按钮点击事件
+                  setShowFuncCallModal(false);
+                  await handleToolCall(false);
+                }}
+              >
+                拒绝
+              </Button>
+            </Space>
           </div>
+        </div>
+      )}
+      {/* 删除通知弹窗 */}
+      {deleteNotification && (
+        <div className="delete-notification">
+          <span className="delete-notification-text">{deleteNotification}</span>
         </div>
       )}
     </div>

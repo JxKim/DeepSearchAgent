@@ -198,3 +198,52 @@ class SystemStatus(BaseModel):
 
 class HealthCheckResponse(BaseResponse):
     data: SystemStatus
+
+
+# 知识库相关模型
+class SearchType(str, Enum):
+    HYBRID = "hybrid_search"
+    VECTOR = "vector_search"
+    KEYWORD = "keyword_search"
+
+class ParseStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class KnowledgeFileBase(BaseModel):
+    file_name: str
+    file_id: str
+    is_parsed: bool = False
+    chunk_num: int = 0
+    search_type: SearchType = SearchType.VECTOR
+    parse_status: ParseStatus = ParseStatus.PENDING # 对应获取解析状态
+    
+class KnowledgeFile(KnowledgeFileBase):
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+    size: int # 文件大小
+
+class KnowledgeFileListResponse(BaseResponse):
+    data: List[KnowledgeFile]
+
+class ParseTaskResponse(BaseResponse):
+    data: Dict[str, str] # task_id
+
+class ParseProgressResponse(BaseResponse):
+    data: Dict[str, Any] # status, progress, etc.
+
+class RecallTestRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    limit: int = 5
+
+class RecallResult(BaseModel):
+    file_name: str
+    content: str
+    score: float
+
+class RecallTestResponse(BaseResponse):
+    data: List[RecallResult]

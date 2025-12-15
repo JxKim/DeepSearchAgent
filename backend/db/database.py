@@ -14,6 +14,7 @@ pg_connection_url = (f"postgresql+psycopg://"
 engine = None
 
 # 创建会话工厂
+# 实际生产环境下,不要使用同步模式
 # SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 SessionLocal = None
 
@@ -34,7 +35,7 @@ async def db_startup():
             class_=AsyncSession,
             expire_on_commit=False,
         )
-        logger.info("数据库连接池初始化完成")
+        logger.info(f"数据库连接池初始化完成,session为:{SessionLocal}")
 
 async def db_shutdown():
     """关闭数据库连接池"""

@@ -1,0 +1,17 @@
+.login-btn {
+  background-color: #a8c7fa !important;
+  color: #062e6f !important;
+  border-radius: 4px !important;
+  padding: 0 24px !important;
+  height: 48px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  border: none !important;
+  transition: background-color 0.2s !important;
+  font-family: inherit !important;
+}
+
+.login-btn:hover {
+  background-color: #d7e3f8 !important;
+  color: #062e6f !important;
+}

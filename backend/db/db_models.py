@@ -17,6 +17,23 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+
+class KnowledgeFile(Base):
+    """知识库文件模型"""
+    __tablename__ = "knowledge_files"
+    
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, index=True, nullable=False)
+    file_name = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=False)
+    file_type = Column(String, nullable=False)
+    storage_path = Column(String, nullable=False)
+    is_parsed = Column(Boolean, default=False)
+    parse_status = Column(String, default='pending')
+    chunk_count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
 class Session(Base):
     """会话模型"""
     __tablename__ = "sessions"
@@ -31,6 +48,21 @@ class Session(Base):
     message_count = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+
+class KnowledgeChunk(Base):
+    """知识库切片模型"""
+    __tablename__ = "knowledge_chunks"
+    
+    id = Column(String, primary_key=True, index=True)
+    file_id = Column(String, index=True, nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    content = Column(String, nullable=False)
+    meta_info = Column(JSON, nullable=True)
+    vector_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class Token(Base):
     """令牌模型"""

@@ -1,76 +1,189 @@
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  line-height: 1.6;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(0, 0, 0, 0.87);
-  background-color: #f0f0f0;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Gemini 风格深色主题 */
+  --bg-primary: #131314;     /* 极深灰/黑色背景 */
+  --bg-secondary: #1E1F20;   /* 侧边栏/输入框背景 */
+  --bg-tertiary: #2D2E30;    /* 悬停/激活状态 */
+  
+  /* 强调色 */
+  --primary-color: #A8C7FA;  /* 浅蓝色文字/图标 */
+  --primary-hover: #D3E3FD;  
+  --accent-color: #1a73e8;   /* 品牌蓝 */
+  
+  /* 文字颜色 */
+  --text-primary: #E3E3E3;   /* 主文字 */
+  --text-secondary: #C4C7C5; /* 次要文字 */
+  --text-muted: #8E918F;     /* 辅助文字 */
+  
+  /* 边框 */
+  --border-color: #444746;
+  
+  /* 圆角 - 更大的圆角 */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --radius-full: 9999px;
+  
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.4);
+  
+  /* 字体 */
+  font-family: 'Google Sans', 'Noto Sans SC', Roboto, sans-serif;
+  line-height: 1.5;
 }
 
-/* 深色模式下的背景色 */
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+
+/* 深色模式 */
 @media (prefers-color-scheme: dark) {
   :root {
-    color: rgba(255, 255, 255, 0.87);
-    background-color: #242424;
+    --bg-primary: var(--dark-bg-primary);
+    --bg-secondary: var(--dark-bg-secondary);
+    --bg-tertiary: var(--dark-bg-tertiary);
+    --bg-hover: var(--dark-bg-hover);
+    --border-color: var(--dark-border-color);
+    --text-primary: var(--dark-text-primary);
+    --text-secondary: var(--dark-text-secondary);
+    --text-muted: var(--dark-text-muted);
   }
 }
 
+/* 链接样式 */
 a {
   font-weight: 500;
-  color: #646cff;
+  color: var(--primary-color);
   text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+  transition: color var(--transition-fast);
 }
 
-body {
+a:hover {
+  color: var(--primary-hover);
+}
+
+/* 标题样式 */
+h1, h2, h3, h4, h5, h6 {
   margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  width: 100%;
-  overflow: hidden;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
 }
 
 h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+  font-size: 2.5rem;
 }
 
+h2 {
+  font-size: 2rem;
+}
+
+h3 {
+  font-size: 1.5rem;
+}
+
+h4 {
+  font-size: 1.25rem;
+}
+
+h5 {
+  font-size: 1rem;
+}
+
+h6 {
+  font-size: 0.875rem;
+}
+
+/* 按钮样式 */
 button {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
   padding: 0.6em 1.2em;
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-sm);
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
+button:hover {
+  background-color: var(--bg-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+button:focus,
+button:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+button:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 深色模式按钮 */
+@media (prefers-color-scheme: dark) {
   button {
-    background-color: #f9f9f9;
+    background-color: var(--dark-bg-tertiary);
+    color: var(--dark-text-primary);
+  }
+  
+  button:hover {
+    background-color: var(--dark-bg-hover);
+  }
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: var(--radius-full);
+  transition: background var(--transition-fast);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* 深色模式滚动条 */
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-track {
+    background: var(--dark-bg-tertiary);
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: var(--dark-border-color);
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--dark-text-muted);
   }
 }

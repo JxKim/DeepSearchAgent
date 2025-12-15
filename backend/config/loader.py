@@ -84,6 +84,7 @@ class ConfigLoader:
     
     def _merge_with_environment(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """将环境变量合并到配置中"""
+        # todo 不需要合并环境变量到配置中
         # 环境变量优先级高于YAML配置
         
         # 基础配置

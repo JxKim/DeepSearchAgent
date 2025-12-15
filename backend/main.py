@@ -12,7 +12,7 @@ from config.loader import get_config
 
 # 直接导入路由模块
 from routes import auth, sessions, system
-from database import db_startup,db_shutdown
+from db.database import db_startup,db_shutdown
 # 初始化配置和日志
 config = get_config()
 setup_logging()
@@ -47,7 +47,7 @@ app = FastAPI(
 # 配置CORS中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # 生产环境中应限制为特定域名
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],  # 生产环境中应限制为特定域名
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -77,5 +77,6 @@ if __name__ == "__main__":
         "main:app",
         host="127.0.0.1",
         port=port,
-        log_level="error"
+        log_level="error",
+        reload=True,
     )

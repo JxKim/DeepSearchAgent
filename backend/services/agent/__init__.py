@@ -9,7 +9,9 @@ config = get_config()
 
 async def get_agent():
     from langchain_deepseek import ChatDeepSeek
-    llm = ChatDeepSeek(model="deepseek-chat",api_key=config.llm.api_key)
+    from langchain_openai import ChatOpenAI
+    # llm = ChatOpenAI(model=config.llm.model,api_key=config.llm.api_key,base_url=config.llm.base_url)
+    llm = ChatDeepSeek(model=config.llm.model,api_key=config.llm.api_key,base_url=config.llm.base_url)
     conn = await aiosqlite.connect(str(Path(__file__).parent / "data" / "langgraph_checkpoint"))
     sqlite_saver = AsyncSqliteSaver(
         conn=conn

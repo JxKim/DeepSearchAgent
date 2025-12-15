@@ -1,11 +1,11 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 from datetime import datetime
-
+from collections import defaultdict
 from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select,delete
 from tests.models import MessageCreate, Session, SessionStatus
-from models.db_models import Session
+from db.db_models import Session
 from services.agent import get_agent
 from langchain_core.messages import BaseMessage, ToolMessage
 
@@ -18,8 +18,11 @@ class SessionService:
 
     """
     def __init__(self):
+        # agent通过协程后面进行懒加载，现在仅需要给一个None即可
         self.agent = None
-        pass
+        # 对agent生成进行暂停flag
+        self.session_keep_generate_flag = defaultdict(lambda : True)
+        
 
     async def init_agent(self):
         """初始化agent"""
@@ -28,7 +31,17 @@ class SessionService:
 
     
     async def create_session(self, user_id,title,db: AsyncSession) -> Session:
-        """创建新会话"""
+        """
+        创建新会话
+        
+        :param self: Description
+        :param user_id: Description
+        :param title: Description
+        :param db: Description
+        :type db: AsyncSession
+        :return: Description
+        :rtype: Session
+        """
         import uuid
         session_id = str(uuid.uuid4())
         db_session = Session(
@@ -64,11 +77,21 @@ class SessionService:
         )
 
     async def get_sessions(self,user_id: str,db: AsyncSession) -> list[Session]:
-        """获取用户的所有会话（分页）"""
+        """
+        获取当前用户下面的所有session会话列表
+        
+        :param self: Description
+        :param user_id: Description
+        :type user_id: str
+        :param db: Description
+        :type db: AsyncSession
+        :return: Description
+        :rtype: list[Session]
+        """
         result = await db.execute(
             select(Session)
             .where(Session.user_id == user_id)
-            .order_by(Session.updated_at.desc())
+            .order_by(Session.updated_at.desc()) # todo 这个地方可以添加更加丰富的信息
         )
         db_sessions = result.scalars().all()
 
@@ -98,60 +121,25 @@ class SessionService:
         return state_res.values['messages'] if state_res and state_res.values else []
 
     async def add_message_to_session(self,session_id: str, user_id: str, message_data: MessageCreate,db: AsyncSession):
-        """向会话添加消息"""
+        """
+        向会话添加消息
+        """
         import json
         session = await session_service.get_session(session_id,db)
         if not session or session.user_id != user_id:
             return None
-
+        logger.info("add_message_to_session invoking...")
         config = {
             "configurable":
                 {"thread_id":session_id}
         }
         await self.init_agent()
-        async def generate_response():
-            try:
-                async for chunk in self.agent.astream(
-                    input={"messages":("user",message_data.text)},
-                    config=config,
-                    stream_mode=["updates","messages"]
-                ):
-                    if chunk[0] == "messages":
-                        # print(type(chunk[1][0]))
-                        if isinstance(chunk[1][0], ToolMessage):
-                            message_json = {
-                                "tool_message": chunk[1][0].content
-                            }
-                            tool_data = json.dumps(message_json)
-                            yield f"data : {tool_data}\n\n"
-                        else:
-                            if chunk[1][0].content: # 只输出有内容的信息
-                                message_json = {
-                                    "ai_message": chunk[1][0].content
-                                }
-                                ai_data = json.dumps(message_json)
-
-                                yield f"data : {ai_data}\n\n"
-                            else:
-                                continue
-                    elif chunk[0] == "updates" and "__interrupt__" in chunk[1]:
-                        interrupt_value = chunk[1]["__interrupt__"][0].value
-                        interrupt_json = {
-                            "func_call": interrupt_value
-                        }
-                        data = json.dumps(interrupt_json)
-                        # yield chunk[1]
-                        yield f"data : {data}\n\n"
-            except Exception as e:
-                logger.error(e)
-                raise ServerSideSession(e)
-
-
-        return generate_response()
+        invoke_message = {"messages":("user",message_data.text)}
+        return self._agent_generate_response(messages=invoke_message,config=config)
 
     async def tool_invoke(self,session_id,is_approved):
         """
-        执行工具调用，
+        根据用户输入内容，判断是否需要执行真正工作调用。通过Interrupt / Consume 等 langgraph原语实现
         """
         import json
         config = {
@@ -159,29 +147,90 @@ class SessionService:
                 {"thread_id": session_id}
         }
         await self.init_agent()
-        async def generate_response(command:Command):
-            async for chunk in self.agent.astream(
-                    input=command,
+        if is_approved:
+            # agent继续执行
+            return self._agent_generate_response(command=Command(resume=True),config=config)
+        else:
+            return self._agent_generate_response(command=Command(resume=False),config=config)
+    
+    async def _agent_generate_response(self,*,command:Command=None,config:Dict=None,messages:Dict=None):
+        """
+        模型生成
+        
+        :param command: Description
+        :type command: Command
+        """
+        import json
+        logger.info("调用_agent_generate_response中")
+        self.session_keep_generate_flag[config["configurable"]["thread_id"]] = True # 重新置为True,避免影响后面生成
+        logger.info(f"当前flag值为:{self.session_keep_generate_flag[config["configurable"]["thread_id"]]}")
+        async for chunk in self.agent.astream(
+                    input=command or messages,
                     config=config,
                     stream_mode=["updates", "messages"]
             ):
-                if chunk[0] == "messages":
-                    if isinstance(chunk[1][0], ToolMessage):
-                        message_json = {
+
+            if not self.session_keep_generate_flag[config["configurable"]["thread_id"]]:
+                logger.info(f"当前session_id为:{config["configurable"]["thread_id"]}置为True")
+                self.session_keep_generate_flag[config["configurable"]["thread_id"]] = True # 重新置为True,避免影响后面生成
+
+                break
+        
+        
+            # 对于messages类型数据，需要判断是ai_message or tool_message，前端使用不同的方式渲染
+            if chunk[0] == "messages":
+                if isinstance(chunk[1][0], ToolMessage):
+                    message_json = {
                             "tool_message": chunk[1][0].content
-                        }
-                    else:
-                        message_json = {
-                            "ai_message": chunk[1][0].content
-                        }
-                    data = json.dumps(message_json)
-                    yield f"data : {data}\n\n"
-            yield "data : [DONE]\n\n"
-        if is_approved:
-            # agent继续执行
-            return generate_response(Command(resume=True))
-        else:
-            return generate_response(Command(resume=False))
+                    }
+                elif chunk[1][0].content:
+                    message_json = {
+                        "ai_message": chunk[1][0].content
+                    }
+                else:
+                    continue
+                data = json.dumps(message_json)
+                logger.debug(f'当前生成的AI消息为:{data}')
+                yield f"data : {data}\n\n"
+
+            # 对于状态更新类型的数据，且状态当中有interrupt，向前端发送特定类型数据
+            elif chunk[0] == "updates" and "__interrupt__" in chunk[1]:
+                interrupt_value = chunk[1]["__interrupt__"][0].value
+                interrupt_json = {
+                    "func_call":interrupt_value
+                }
+                data = json.dumps(interrupt_json)
+                logger.debug(f"当前生成的状态更新消息为:{data}")
+                yield f"data: {data}\n\n"
+        
+        
+        yield "data : [DONE]\n\n"
+        # 总是需要将状态重新置为True
+        
+            
+    async def stop_generation(self,session_id:str)->bool:
+        """
+        暂停Agent继续生成
+        
+        :param session_id: Description
+        :type session_id: str
+        """
+        logger.info(f"当前session_id为:{session_id}置为False")
+        self.session_keep_generate_flag[session_id] = False # 将flag置为False,停止模型的生成
+        return True
+    
+    async def delete_session(self,session_id:str,db: AsyncSession):
+        """
+        删除会话，包括会话中的所有消息
+        
+        :param session_id: Description
+        :type session_id: str
+        """
+        await db.execute(delete(Session).where(Session.id == session_id))
+        await db.commit()
+
+        
+        
 
 # 创建单例实例
 session_service = SessionService()

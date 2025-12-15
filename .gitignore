@@ -1,2 +1,10 @@
+.vscode/
 backend/.venv
-logs
+backend/__pycache__/
+backend/*.pyc
+backend/logs/
+backend/tests/
+demo/
+.idea/
+__pycache__/
+backend/router/__pycache__/

@@ -2,7 +2,7 @@ import datetime
 
 from fastapi import APIRouter
 from tests.models import SystemStatus, HealthCheckResponse
-from database import check_db_connection
+from db.database import check_db_connection
 router = APIRouter(prefix="/system", tags=["系统管理"])
 
 @router.get("/status", response_model=SystemStatus)

@@ -4,7 +4,7 @@ from routes.schema import (
     BaseResponse, VerifyRequest
 )
 from services.auth_service import auth_service
-from database import get_db
+from db.database import get_db
 router = APIRouter(prefix="/auth", tags=["认证管理"])
 
 @router.post("/register", response_model=Token)

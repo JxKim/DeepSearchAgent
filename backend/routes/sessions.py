@@ -6,46 +6,16 @@ from starlette.responses import StreamingResponse
 
 from routes.schema import (
     Session, SessionListItem, Message, MessageCreate,
-    SessionListResponse, User, SenderType, ToolRequestResponse, ToolInvokeRequest, SessionCreate
+    SessionListResponse, User, SenderType, ToolRequestResponse, ToolInvokeRequest, SessionCreate,BaseResponse
 )
 # from controllers.auth_controller import verify_token
 from services.session_service import session_service
 from services.auth_service import auth_service
 from config.loguru_config import get_logger
-
-from database import get_db,SessionLocal
+from routes.utils import get_current_user_from_token
+from db.database import get_db
 logger = get_logger(__name__)
-# 依赖函数：从请求头中获取并验证令牌
-async def get_current_user_from_token(authorization: Optional[str] = Header(None)) -> User:
-    """从请求头中获取并验证令牌，返回当前用户"""
-    from database import SessionLocal
-    logger.info('get_current_user_from_token 被调用')
-    
-    if not authorization:
-        logger.info('未提供授权令牌')
-        raise HTTPException(status_code=401, detail="未提供授权令牌")
-    
-    # 提取令牌（移除Bearer前缀）
-    if authorization.startswith("Bearer "):
-        token = authorization[7:]
-        logger.info(f'提取到的令牌: {token}')
-    else:
-        token = authorization
-        logger.info(f'提取到的令牌（无Bearer前缀）: {token}')
-    
-    # 验证令牌
-    logger.info('开始验证令牌')
-    session = SessionLocal()
-    try:
-        user = await auth_service.verify_token(token,session)
-        if not user:
-            logger.info('无效的令牌')
-            raise HTTPException(status_code=401, detail="无效的令牌")
 
-        logger.info(f'令牌验证成功，返回用户: {user.id}')
-    finally:
-        await session.close()
-    return user
 
 router = APIRouter(prefix="/sessions", tags=["会话管理"])
 
@@ -117,3 +87,27 @@ async def tool_invoke(session_id:str,tool_invoke_request: ToolInvokeRequest,curr
     """
     stream_generator = await session_service.tool_invoke(session_id=session_id,is_approved=tool_invoke_request.is_authorized)
     return StreamingResponse(stream_generator,media_type="text/event-stream",)
+
+
+# todo 定义response_model
+@router.post("/{session_id}/stop",response_model=BaseResponse)
+async def stop_generation(session_id:str,current_user:User = Depends(get_current_user_from_token)):
+    """
+    停止此刻模型的生成。消息列表中仅保留已生成的token消息列表
+    
+    :param session_id: Description
+    :type session_id: str
+    """
+    # resp = await session_service.stop_generation(session_id = session_id)
+    return BaseResponse(success=True,message="Stop generating new tokens succeeded.")
+
+@router.delete("/{session_id}",response_model=BaseResponse)
+async def delete_session(session_id:str,current_user:User = Depends(get_current_user_from_token),db=Depends(get_db)):
+    """
+    删除会话，包括会话中的所有消息
+    
+    :param session_id: Description
+    :type session_id: str
+    """
+    await session_service.delete_session(session_id = session_id,db=db)
+    return BaseResponse(success=True,message="Delete session succeeded.")
