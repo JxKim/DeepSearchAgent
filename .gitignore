@@ -8,3 +8,14 @@ demo/
 .idea/
 __pycache__/
 backend/router/__pycache__/
+data/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test files
+backend/tests/
+
+# LangGraph checkpoint (SQLite files)
+backend/services/agent/data/langgraph_checkpoint*

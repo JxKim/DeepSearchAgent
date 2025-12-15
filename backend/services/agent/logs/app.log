@@ -1,0 +1,8 @@
+2025-12-06 03:40:35 | INFO     | __main__:save_report_to_lark:79 - 正在调用save_report_to_lark，入参为:file_title=tool工具测试, file_content长度=8546
+2025-12-06 03:40:35 | INFO     | services.http_client:_create_client:66 - HTTP客户端已创建
+2025-12-06 03:40:35 | INFO     | services.feishu_service:get_tenant_access_token:45 - 飞书租户访问令牌获取成功
+2025-12-06 03:40:36 | INFO     | services.feishu_service:create_document:77 - 飞书文档创建成功: H3a5dgYrRovJcSx1txscIt7InJw
+2025-12-06 03:40:36 | INFO     | services.feishu_service:convert_markdown_to_blocks:110 - Markdown转换成功，生成 200 个块
+2025-12-06 03:40:37 | INFO     | services.feishu_service:write_blocks_to_document:142 - 块写入飞书文档成功: H3a5dgYrRovJcSx1txscIt7InJw
+2025-12-06 03:40:37 | INFO     | services.feishu_service:save_report_to_feishu:166 - 报告保存成功: https://ai.feishu.cn/docx/H3a5dgYrRovJcSx1txscIt7InJw
+2025-12-06 03:40:37 | INFO     | __main__:save_report_to_lark:90 - save_report_to_lark调用完成，返回结果为: 写入成功,飞书连接为：https://ai.feishu.cn/docx/H3a5dgYrRovJcSx1txscIt7InJw

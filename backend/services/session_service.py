@@ -91,7 +91,7 @@ class SessionService:
         result = await db.execute(
             select(Session)
             .where(Session.user_id == user_id)
-            .order_by(Session.updated_at.desc()) # todo 这个地方可以添加更加丰富的信息
+            .order_by(Session.updated_at.desc())
         )
         db_sessions = result.scalars().all()
 

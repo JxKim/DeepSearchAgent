@@ -1,0 +1,115 @@
+# SmartAgent 应用配置
+# 基础配置
+environment: "development"
+debug: true
+
+# 日志配置
+logging:
+  level: "INFO"
+  format:
+    development: "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+    production: "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
+  handlers:
+    console:
+      enabled: true
+      level: "INFO"
+      colorize: true
+    file:
+      enabled: true
+      level: "INFO"
+      path: "logs/app.log"
+      rotation: "10 MB"
+      retention: "30 days"
+      compression: "zip"
+  loggers:
+    "main": "INFO"
+    "feishu": "INFO"
+    "llm": "DEBUG"
+    "database": "INFO"
+
+# 飞书配置
+feishu:
+  app_id: "cli_a9a681ebdafb9bc9"  # 从环境变量读取
+  app_secret: "3nlrxGhZtFPLQWIQC91iQXZovqZXYB6k"  # 从环境变量读取
+  base_url: "https://open.feishu.cn"
+  timeout: 30
+  endpoints:
+    get_tenant_token: "/open-apis/auth/v3/tenant_access_token/internal"
+    send_message: "/open-apis/im/v1/messages"
+    upload_file: "/open-apis/drive/v1/files/upload_all"
+    get_user_info: "/open-apis/contact/v3/users/{user_id}"
+
+# LLM配置
+llm:
+  provider: "deepseek"
+  api_key: "sk-c560a3bdaef045b7a959c830f324819c"
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  temperature: 0.7
+  max_tokens: 2000
+  timeout: 60
+
+# llm:
+#   provider: "deepseek"
+#   api_key: "sk-ea2e9956dd547e9d05081ba7ee06ce0a"
+#   base_url: "https://apis.iflow.cn/v1"
+#   model: "deepseek-v3.2"
+#   temperature: 0.7
+#   max_tokens: 2000
+#   timeout: 60
+
+
+
+postgres_database:
+  host: "localhost"
+  port: 5433
+  user: "smartagent_user"
+  password: "smartagent_pass"
+  dbname: "smartagent_db"
+
+# 服务器配置
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1
+  reload: true
+  log_level: "info"
+
+# HTTP客户端配置
+http_client:
+  timeout: 30.0
+  max_connections: 100
+  max_keepalive_connections: 20
+  keepalive_expiry: 5.0
+  retries: 3
+  backoff_factor: 0.5
+  proxy: null
+  verify_ssl: true
+  cert: null
+  default_headers:
+    User-Agent: "SmartAgent/1.0"
+
+# 安全配置
+security:
+  access_token_expire_minutes: 30
+
+# tavily配置
+tavily_api_key: "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"
+
+storage:
+  storage_type: "postgres"
+  scheme: "postgresql"
+  file_path: "./data"
+
+milvus:
+  uri: "http://localhost:19530"
+  token: "root:Milvus"
+  db_name: "smartagent_db"
+  collection_name: "smartagent_collection"
+
+embedding:
+  model: "text-embedding-3-small"
+  provider: "openai"
+  api_key: "sk-Zryi784ESlgEzfP37KzzHKD1vZb1FR9c6d3IijSGJsoRAfMu"
+  base_url: "https://api.openai-proxy.org/v1"
+  dim: 1536
