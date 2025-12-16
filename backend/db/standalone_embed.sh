@@ -1,23 +1,39 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-# Licensed to the LF AI & Data foundation under one
-# or more contributor license agreements. See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership. The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License. You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# 获取脚本所在目录的上级目录（backend）
+BACKEND_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+ENV_FILE="$BACKEND_DIR/.env"
+# --- 数据目录配置 ---
+DB_DATA_DIR="$BACKEND_DIR/db/data"
+mkdir -p "$DB_DATA_DIR"
+
+# 颜色定义
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+# Milvus 数据目录
+MILVUS_DATA_DIR="$DB_DATA_DIR/milvus"
+MILVUS_CONFIG_DIR="$DB_DATA_DIR/milvus_config"
+mkdir -p "$MILVUS_DATA_DIR"
+mkdir -p "$MILVUS_CONFIG_DIR"
 
 run_embed() {
-    cat << EOF > embedEtcd.yaml
+    log_info "正在将相关配置写入到 $MILVUS_CONFIG_DIR 目录..."
+    cat << EOF > "$MILVUS_CONFIG_DIR"/embedEtcd.yaml
 listen-client-urls: http://0.0.0.0:2379
 advertise-client-urls: http://0.0.0.0:2379
 quota-backend-bytes: 4294967296
@@ -25,18 +41,19 @@ auto-compaction-mode: revision
 auto-compaction-retention: '1000'
 EOF
 
-    cat << EOF > user.yaml
+    cat << EOF > "$MILVUS_CONFIG_DIR"/user.yaml
 # Extra config to override default milvus.yaml
 EOF
-    if [ ! -f "./embedEtcd.yaml" ]
+    log_info "将相关配置写入到 $MILVUS_CONFIG_DIR 目录 完成"
+    if [ ! -f "$MILVUS_CONFIG_DIR/embedEtcd.yaml" ]
     then
-        echo "embedEtcd.yaml file does not exist. Please try to create it in the current directory."
+        log_error "embedEtcd.yaml file does not exist. Please try to create it in the current directory."
         exit 1
     fi
 
-    if [ ! -f "./user.yaml" ]
+    if [ ! -f "$MILVUS_CONFIG_DIR/user.yaml" ]
     then
-        echo "user.yaml file does not exist. Please try to create it in the current directory."
+        log_error "user.yaml file does not exist. Please try to create it in the current directory."
         exit 1
     fi
     
@@ -48,9 +65,9 @@ EOF
         -e ETCD_CONFIG_PATH=/milvus/configs/embedEtcd.yaml \
         -e COMMON_STORAGETYPE=local \
         -e DEPLOY_MODE=STANDALONE \
-        -v $(pwd)/volumes/milvus:/var/lib/milvus \
-        -v $(pwd)/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml \
-        -v $(pwd)/user.yaml:/milvus/configs/user.yaml \
+        -v "$MILVUS_DATA_DIR":/var/lib/milvus \
+        -v "$MILVUS_CONFIG_DIR"/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml \
+        -v "$MILVUS_CONFIG_DIR"/user.yaml:/milvus/configs/user.yaml \
         -p 19530:19530 \
         -p 9091:9091 \
         -p 2379:2379 \
@@ -64,25 +81,40 @@ EOF
 }
 
 wait_for_milvus_running() {
-    echo "Wait for Milvus Starting..."
-    while true
+    log_info "等待Milvus启动中..."
+    local max_retries=60
+    local count=0
+    while [ $count -lt $max_retries ]
     do
+        # 检查容器是否还在运行
+        if ! sudo docker ps | grep -q milvus-standalone; then
+             log_error "Milvus 容器已停止运行，启动失败。"
+             log_error "请使用 'docker logs milvus-standalone' 查看日志。"
+             return 1
+        fi
+
         res=`sudo docker ps|grep milvus-standalone|grep healthy|wc -l`
         if [ $res -eq 1 ]
         then
-            echo "Start successfully."
-            echo "To change the default Milvus configuration, add your settings to the user.yaml file and then restart the service."
-            break
+            log_info "Milvus 启动成功"
+            # log_info "To change the default Milvus configuration, add your settings to the user.yaml file and then restart the service."
+            return 0
         fi
-        sleep 1
+        sleep 2
+        count=$((count+1))
+        log_info "正在等待 Milvus 就绪... ($count/$max_retries)"
     done
+    
+    log_error "Milvus 启动超时 (120秒)."
+    log_error "当前状态: $(sudo docker inspect --format='{{.State.Health.Status}}' milvus-standalone 2>/dev/null)"
+    return 1
 }
 
 start() {
     res=`sudo docker ps|grep milvus-standalone|grep healthy|wc -l`
     if [ $res -eq 1 ]
     then
-        echo "Milvus is running."
+        log_info "Milvus 正在运行中."
         exit 0
     fi
 
@@ -96,11 +128,14 @@ start() {
 
     if [ $? -ne 0 ]
     then
-        echo "Start failed."
+        log_error "启动失败."
         exit 1
     fi
 
     wait_for_milvus_running
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
 }
 
 stop() {
@@ -108,10 +143,10 @@ stop() {
 
     if [ $? -ne 0 ]
     then
-        echo "Stop failed."
+        log_error "停止Milvus失败."
         exit 1
     fi
-    echo "Stop successfully."
+    log_info "Milvus 停止成功."
 
 }
 
@@ -119,28 +154,28 @@ delete_container() {
     res=`sudo docker ps|grep milvus-standalone|wc -l`
     if [ $res -eq 1 ]
     then
-        echo "Please stop Milvus service before delete."
+        log_warn "请先停止Milvus服务再删除."
         exit 1
     fi
     sudo docker rm milvus-standalone 1> /dev/null
     if [ $? -ne 0 ]
     then
-        echo "Delete milvus container failed."
+        log_error "删除Milvus容器失败."
         exit 1
     fi
-    echo "Delete milvus container successfully."
+    log_info "Milvus 容器删除成功."
 }
 
 delete() {
-    read -p "Please confirm if you'd like to proceed with the delete. This operation will delete the container and data. Confirm with 'y' for yes or 'n' for no. > " check
+    read -p "请确认是否继续删除Milvus容器和数据. 这将删除容器和数据. 确认请输入 'y' 或 'n'. > " check
     if [ "$check" == "y" ] ||[ "$check" == "Y" ];then
         delete_container
         sudo rm -rf $(pwd)/volumes
         sudo rm -rf $(pwd)/embedEtcd.yaml
         sudo rm -rf $(pwd)/user.yaml
-        echo "Delete successfully."
+        log_info "Milvus 数据删除成功."
     else
-        echo "Exit delete"
+        log_info "Exit delete"
         exit 0
     fi
 }
@@ -157,9 +192,9 @@ upgrade() {
 
         curl -sfL https://raw.githubusercontent.com/milvus-io/milvus/master/scripts/standalone_embed.sh -o standalone_embed_latest.sh && \
         bash standalone_embed_latest.sh start 1> /dev/null && \
-        echo "Upgrade successfully."
+        log_info "Upgrade successfully."
     else
-        echo "Exit upgrade"
+        log_info "Exit upgrade"
         exit 0
     fi
 }
@@ -182,6 +217,6 @@ case $1 in
         delete
         ;;
     *)
-        echo "please use bash standalone_embed.sh restart|start|stop|upgrade|delete"
+        log_info "请使用 bash standalone_embed.sh restart|start|stop|upgrade|delete"
         ;;
 esac

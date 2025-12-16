@@ -1,6 +1,6 @@
 -- auto-generated definition
-drop table if exists sessions;
-create table sessions
+-- drop table if exists sessions;
+create table if not exists sessions
 (
     id                  varchar not null
         primary key,
@@ -18,15 +18,15 @@ create table sessions
 alter table sessions
     owner to smartagent_user;
 
-create index ix_sessions_id
+create index if not exists ix_sessions_id
     on sessions (id);
 
-create index ix_sessions_user_id
+create index if not exists ix_sessions_user_id
     on sessions (user_id);
 
 -- auto-generated definition
-drop table if exists tokens;
-create table tokens # 令牌
+-- drop table if exists tokens;
+create table if not exists tokens 
 (
     id         varchar                  not null
         primary key,
@@ -39,18 +39,18 @@ create table tokens # 令牌
 alter table tokens
     owner to smartagent_user;
 
-create index ix_tokens_id
+create index if not exists ix_tokens_id
     on tokens (id);
 
-create index ix_tokens_user_id
+create index if not exists ix_tokens_user_id
     on tokens (user_id);
 
-create unique index ix_tokens_token
+create unique index if not exists ix_tokens_token
     on tokens (token);
 
 -- auto-generated definition
-drop table if exists users;
-create table users
+-- drop table if exists users;
+create table if not exists users
 (
     id         varchar not null
         primary key,
@@ -66,19 +66,19 @@ create table users
 alter table users
     owner to smartagent_user;
 
-create unique index ix_users_email
+create unique index if not exists ix_users_email
     on users (email);
 
-create unique index ix_users_username
+create unique index if not exists ix_users_username
     on users (username);
 
-create index ix_users_id
+create index if not exists ix_users_id
     on users (id);
 
-## 知识库相关数据表：
+-- ## 知识库相关数据表：
 
-drop table if exists knowledge_files;
-create table knowledge_files
+-- drop table if exists knowledge_files;
+create table if not exists knowledge_files
 (
     id          varchar                  not null
         primary key,
@@ -97,11 +97,11 @@ create table knowledge_files
 alter table knowledge_files
     owner to smartagent_user;
 
-create index ix_knowledge_files_user_id
+create index if not exists ix_knowledge_files_user_id
     on knowledge_files (user_id);
 
-drop table if exists knowledge_chunks;
-create table knowledge_chunks
+-- drop table if exists knowledge_chunks;
+create table if not exists knowledge_chunks
 (
     id              varchar                  not null
         primary key,
@@ -116,5 +116,5 @@ create table knowledge_chunks
 alter table knowledge_chunks
     owner to smartagent_user;
 
-create index ix_knowledge_chunks_file_id
+create index if not exists ix_knowledge_chunks_file_id
     on knowledge_chunks (file_id);

@@ -126,72 +126,13 @@ if [[ "$MILVUS_URI" == *"localhost"* ]] || [[ "$MILVUS_URI" == *"127.0.0.1"* ]];
         fi
 
         if [ -f "$MILVUS_SCRIPT" ]; then
-            log_info "正在启动 Milvus (使用 $MILVUS_SCRIPT)..."
+            log_info "正在启动 Milvus..."
             
             # 确保脚本有执行权限
             chmod +x "$MILVUS_SCRIPT"
             
-            # 切换到脚本所在目录执行，因为脚本内部使用了相对路径 $(pwd) 来挂载 volume
-            # 使用子 shell 避免影响当前脚本的工作目录
-            # 我们需要传递自定义的数据目录给 standalone_embed.sh，或者修改 standalone_embed.sh
-            # 由于 standalone_embed.sh 是第三方脚本或固定脚本，我们这里通过环境变量传递 VOLUME_DIR 给它 (如果它支持)
-            # 或者我们临时修改它的行为。
-            # 查看之前的 standalone_embed.sh 内容，它使用 $(pwd)/volumes/milvus
-            # 我们可以创建一个软链接，或者修改 standalone_embed.sh。
-            # 为了不修改 standalone_embed.sh (方便升级)，我们在执行前，
-            # 在脚本所在目录创建一个指向我们需要的数据目录的软链接 "volumes"
-            
             (
                 cd "$(dirname "$MILVUS_SCRIPT")"
-                
-                # 创建 volumes 目录的软链接，指向我们的 MILVUS_DATA_DIR
-                # standalone_embed.sh 使用 $(pwd)/volumes/milvus
-                # 所以我们需要让 $(pwd)/volumes 指向 MILVUS_DATA_DIR 的上级或者直接处理
-                
-                # 方案：
-                # standalone_embed.sh 期望: ./volumes/milvus
-                # 我们希望存储在: $MILVUS_DATA_DIR (例如 backend/db/data/milvus)
-                
-                # 1. 备份原有的 volumes 目录 (如果存在且不是软链接)
-                if [ -d "volumes" ] && [ ! -L "volumes" ]; then
-                    log_warn "发现现有的 volumes 目录，将其重命名为 volumes_backup..."
-                    mv volumes volumes_backup_$(date +%Y%m%d%H%M%S)
-                fi
-                
-                # 2. 创建指向 $MILVUS_DATA_DIR 父目录的链接，或者直接链接
-                # standalone_embed.sh 写死的是 -v $(pwd)/volumes/milvus:/var/lib/milvus
-                # 所以我们需要 ./volumes/milvus 对应到 $MILVUS_DATA_DIR
-                
-                # 确保 ./volumes 存在
-                mkdir -p volumes
-                
-                # 如果 ./volumes/milvus 已经存在且不是链接到我们的目标，则处理
-                # 这里为了简单，我们直接把 $MILVUS_DATA_DIR 作为 ./volumes/milvus 的挂载点
-                # 但是 docker -v 宿主机路径必须存在。
-                
-                # 更简单的做法：
-                # 修改 standalone_embed.sh 调用方式不太容易，因为它是硬编码的。
-                # 我们可以临时设置一个环境变量，如果 standalone_embed.sh 不支持，我们就得修改 standalone_embed.sh
-                # 让我们先检查 standalone_embed.sh 是否支持自定义目录。
-                # 之前读取的内容显示： -v $(pwd)/volumes/milvus:/var/lib/milvus
-                # 它是硬编码的。
-                
-                # 所以我们采用软链接方案：
-                # 让 $(pwd)/volumes/milvus 成为指向 $MILVUS_DATA_DIR 的软链接
-                
-                mkdir -p volumes
-                if [ -d "volumes/milvus" ] && [ ! -L "volumes/milvus" ]; then
-                     # 如果是普通目录，说明之前运行过，数据在里面。
-                     # 我们应该把数据移动到新位置，然后建立链接
-                     log_info "迁移旧的 Milvus 数据到新目录 $MILVUS_DATA_DIR..."
-                     cp -r volumes/milvus/* "$MILVUS_DATA_DIR/" 2>/dev/null || true
-                     rm -rf volumes/milvus
-                fi
-                
-                if [ ! -L "volumes/milvus" ]; then
-                    ln -s "$MILVUS_DATA_DIR" "volumes/milvus"
-                fi
-
                 # 注意：standalone_embed.sh 内部使用了 sudo，如果用户非 root 且无 sudo 权限可能会失败
                 # 如果当前已经是 root 或者有免密 sudo，则没问题
                 # 这里直接调用 bash 运行
@@ -226,5 +167,65 @@ check_port() {
 
 check_port "$PG_PORT" "PostgreSQL"
 check_port "$MILVUS_PORT" "Milvus"
+
+# --- 执行 DDL ---
+# 如果 PostgreSQL 启动成功（或已运行），执行 table_ddl.sql
+DDL_FILE="$BACKEND_DIR/db/table_ddl.sql"
+
+if [ -f "$DDL_FILE" ]; then
+    log_info "正在检查 PostgreSQL 是否就绪以执行 DDL..."
+    
+    # 尝试连接 PostgreSQL 并执行 SQL
+    # 需要安装 postgresql-client (psql) 或者使用 docker exec
+    
+    if [ "$PG_HOST" == "localhost" ] || [ "$PG_HOST" == "127.0.0.1" ]; then
+        CONTAINER_NAME="smartagent_postgres"
+        if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+             log_info "在容器 $CONTAINER_NAME 中执行 table_ddl.sql..."
+             
+             # 等待 PostgreSQL 完全启动
+             RETRIES=10
+             while [ $RETRIES -gt 0 ]; do
+                 if docker exec $CONTAINER_NAME pg_isready -U "$PG_USER" > /dev/null 2>&1; then
+                     break
+                 fi
+                 log_info "等待 PostgreSQL 就绪... ($RETRIES)"
+                 sleep 2
+                 RETRIES=$((RETRIES-1))
+             done
+             
+             if [ $RETRIES -eq 0 ]; then
+                 log_error "PostgreSQL 未能及时就绪，跳过 DDL 执行."
+             else
+                 # 将 SQL 文件内容传递给 docker exec psql
+                 # 注意：这里假设 table_ddl.sql 的语法是兼容的 (create table if not exists)
+                 cat "$DDL_FILE" | docker exec -i $CONTAINER_NAME psql -U "$PG_USER" -d "$PG_DB"
+                 
+                 if [ $? -eq 0 ]; then
+                     log_info "DDL 执行成功."
+                 else
+                     log_error "DDL 执行失败."
+                 fi
+             fi
+        else
+             log_warn "PostgreSQL 容器未运行，跳过 DDL 执行."
+        fi
+    else
+        # 远程主机，如果本地有 psql 命令则尝试执行
+        if command -v psql >/dev/null 2>&1; then
+             log_info "正在远程主机 $PG_HOST 上执行 table_ddl.sql..."
+             PGPASSWORD="$PG_PASS" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -f "$DDL_FILE"
+             if [ $? -eq 0 ]; then
+                 log_info "DDL 执行成功."
+             else
+                 log_error "DDL 执行失败."
+             fi
+        else
+             log_warn "未找到 psql 命令且配置为远程主机，跳过 DDL 执行."
+        fi
+    fi
+else
+    log_warn "未找到 DDL 文件: $DDL_FILE"
+fi
 
 log_info "数据库服务启动脚本执行完成."

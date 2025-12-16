@@ -53,7 +53,7 @@ fi
 MILVUS_SCRIPT="$BACKEND_DIR/db/standalone_embed.sh"
 
 if [ -f "$MILVUS_SCRIPT" ]; then
-    log_info "正在停止 Milvus (使用 $MILVUS_SCRIPT)..."
+    log_info "正在停止 Milvus..."
     
     # 确保脚本有执行权限
     chmod +x "$MILVUS_SCRIPT"
