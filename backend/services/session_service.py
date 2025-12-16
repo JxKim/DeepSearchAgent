@@ -4,7 +4,7 @@ from collections import defaultdict
 from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select,delete
-from tests.models import MessageCreate, Session, SessionStatus
+from routes.schema import MessageCreate, Session, SessionStatus
 from db.db_models import Session
 from services.agent import get_agent
 from langchain_core.messages import BaseMessage, ToolMessage

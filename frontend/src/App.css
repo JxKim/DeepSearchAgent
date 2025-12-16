@@ -7,6 +7,51 @@
   overflow: hidden;
   background-color: var(--bg-primary);
   font-family: var(--font-family);
+  color: var(--text-primary);
+}
+
+/* 输入框区域样式调整 */
+.chat-input {
+  background-color: var(--bg-primary) !important;
+}
+
+.message-input-container {
+  background-color: var(--bg-secondary) !important;
+  border: 1px solid var(--border-color);
+  border-radius: 28px;
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  transition: background-color 0.2s;
+}
+
+.message-input-container:focus-within {
+  background-color: var(--bg-tertiary) !important;
+  border-color: var(--border-color);
+}
+
+.message-input-container input {
+  color: var(--text-primary) !important;
+  font-size: 1rem;
+}
+
+.message-input-container input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* 按钮样式 */
+.input-action-btn, .send-btn {
+  color: var(--text-secondary) !important;
+}
+
+.input-action-btn:hover, .send-btn:hover {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+}
+
+.send-btn.active {
+  color: var(--primary-color) !important;
+  background-color: rgba(168, 199, 250, 0.1) !important;
 }
 
 /* 用户详情页布局 */
@@ -75,9 +120,12 @@
   background-color: var(--bg-secondary) !important;
   border: 1px solid var(--border-color) !important;
   border-radius: var(--radius-lg) !important;
+  color: var(--text-primary) !important;
 }
 
-.basic-info-card .ant-descriptions-title {
+.basic-info-card .ant-descriptions-title,
+.knowledge-base-card .ant-typography,
+.long-term-memory-card .ant-typography {
   color: var(--text-primary) !important;
 }
 
@@ -97,6 +145,67 @@
 .long-term-memory-card .ant-card-body {
   padding: 0 !important;
   background-color: transparent !important;
+  color: var(--text-primary) !important;
+}
+
+/* 知识库表格样式覆盖 */
+.knowledge-base-card .ant-table {
+  background-color: transparent !important;
+  color: var(--text-primary) !important;
+}
+
+.knowledge-base-card .ant-table-thead > tr > th {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-secondary) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+.knowledge-base-card .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+.knowledge-base-card .ant-table-tbody > tr:hover > td {
+  background-color: var(--bg-tertiary) !important;
+}
+
+.knowledge-base-card .ant-pagination-item a {
+  color: var(--text-primary) !important;
+}
+
+.knowledge-base-card .ant-pagination-item-active {
+  background-color: var(--bg-tertiary) !important;
+  border-color: var(--primary-color) !important;
+}
+
+.knowledge-base-card .ant-pagination-item-active a {
+  color: var(--primary-color) !important;
+}
+
+.knowledge-base-card .ant-empty-description {
+  color: var(--text-secondary) !important;
+}
+
+/* 长期记忆列表样式覆盖 */
+.long-term-memory-card .ant-list {
+  color: var(--text-primary) !important;
+}
+
+.long-term-memory-card .ant-list-item {
+  border-bottom: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+.long-term-memory-card .ant-list-item-meta-title {
+  color: var(--text-primary) !important;
+}
+
+.long-term-memory-card .ant-list-item-meta-description {
+  color: var(--text-secondary) !important;
+}
+
+.long-term-memory-card .ant-empty-description {
+  color: var(--text-secondary) !important;
 }
 
 .basic-info-card .ant-descriptions-row {

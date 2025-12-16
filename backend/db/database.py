@@ -35,7 +35,7 @@ async def db_startup():
             class_=AsyncSession,
             expire_on_commit=False,
         )
-        logger.info(f"数据库连接池初始化完成,session为:{SessionLocal}")
+        logger.info(f"数据库连接池初始化完成")
 
 async def db_shutdown():
     """关闭数据库连接池"""

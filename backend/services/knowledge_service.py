@@ -7,6 +7,7 @@ from opendal import Operator, AsyncOperator
 from pymilvus import MilvusClient, DataType, FunctionType, Function, AsyncMilvusClient
 from langchain.embeddings import init_embeddings
 from config.loader import get_config
+from config.loguru_config import get_logger
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.db_models import KnowledgeFile, KnowledgeChunk
@@ -15,6 +16,15 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 config = get_config()
+logger = get_logger()
+
+class SearchStrategy:
+    """
+    搜索策略枚举类
+    """
+    HYBRID = "hybrid"
+    VECTOR = "vector"
+    FULL_TEXT = "full_text"
 
 class KnowledgeService:
     """
@@ -72,11 +82,15 @@ class KnowledgeService:
             is_primary=True,
             auto_id=True
         )
+        analyzer_params = {
+            "type":"chinese"
+        }
         schema.add_field(
             field_name="text",
             datatype=DataType.VARCHAR,
             max_length=65535,
-            enable_analyzer=True
+            enable_analyzer=True,
+            analyzer_params=analyzer_params, # 使用自定义的中文分析器
         )
         schema.add_field(
             field_name="text_sparse",
@@ -102,8 +116,8 @@ class KnowledgeService:
             metric_type="BM25",
             params={
                 "inverted_index_algo": "DAAT_MAXSCORE",
-                "bm25_k1": 1.2,
-                "bm25_b": 0.75
+                # "bm25_k1": 1.2,
+                # "bm25_b": 0.75
             }
         )
         
@@ -137,7 +151,16 @@ class KnowledgeService:
 
     async def upload_file(self, user_id: str, file_name: str, file_content: bytes,db: AsyncSession):
         """
-        上传文件
+        上传文件：
+            1、生成唯一的文件ID
+            2、构建文件存储路径
+            3、将文件内容写入到存储后端
+            4、将文件元数据保存至数据库
+        
+        todo:
+            边界情况/异常情况处理
+            1、上传到一半，网络等异常导致上传失败，需要回滚数据库
+
         :param user_id: 用户ID
         :param file_name: 文件名
         :param file_content: 文件内容
@@ -240,7 +263,7 @@ class KnowledgeService:
             loop.close()
         except Exception as e:
             # 记录错误日志
-            print(f"Error in parse task: {e}")
+            logger.error(f"Error in parse task: {e}")
             # 这里应该有错误处理逻辑，比如更新数据库状态为 failed
             # 由于是在线程中，我们需要单独处理数据库连接
 
@@ -249,7 +272,11 @@ class KnowledgeService:
         实际的解析逻辑
         """
         from db.database import SessionLocal
+        import magic
+        from services.parsers.pdf_parser import PDFParser
+        from services.parsers.csv_parser import CSVParser
         
+
         async with SessionLocal() as db:
             try:
                 # 获取文件记录
@@ -259,17 +286,39 @@ class KnowledgeService:
                 if not file_record:
                     return
 
-                # 这里模拟解析过程
-                # 实际逻辑应该是：
                 # 1. 从存储中读取文件内容
-                # 2. 解析文件内容（例如使用 LangChain 的 document loaders）
-                # 3. 切分文档
-                # 4. 生成 embedding
-                # 5. 存入 Milvus
-                # 6. 更新数据库状态
+                file_content = await self.op.read(file_record.storage_path)
                 
-                # todo 具体的解析逻辑
+                # 2. 判断文件类型
+                mime_type = magic.from_buffer(file_content, mime=True)
                 
+                # 3. 根据文件类型选择解析器
+                parser = None
+                if mime_type == 'application/pdf':
+                    parser = PDFParser()
+                elif mime_type == 'text/csv' or mime_type == 'text/plain': # csv sometimes detected as text/plain
+                     if file_record.file_name.endswith('.csv'):
+                         parser = CSVParser()
+                
+                if parser:
+                    # 临时保存文件以便解析器使用（如果解析器需要文件路径）
+                    # 这里假设解析器需要文件路径，我们先写入临时文件
+                    import tempfile
+                    import os
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_record.file_type}") as tmp_file:
+                        tmp_file.write(file_content)
+                        tmp_path = tmp_file.name
+                        
+                    try:
+                        documents = parser.parse(tmp_path)
+                        # todo: 处理解析后的文档，切分，embedding，存入Milvus
+                        # 这里暂时只做解析
+                        logger.info(f"Parsed {len(documents)} documents from {file_record.file_name}")
+                        
+                    finally:
+                        os.remove(tmp_path)
+
                 # 模拟解析完成
                 file_record.parse_status = "completed"
                 file_record.is_parsed = True
@@ -293,12 +342,23 @@ class KnowledgeService:
             return None
         return {"status": file_record.parse_status}
 
-    async def _search_content(self, query: str, limit: int = 5):
+    async def search_content(self, query: str | list[str], limit: int = 5,search_strategy:str = SearchStrategy.HYBRID)->list[list[dict]]:
         """
-        根据 query 召回文档
+        根据 query 召回文档，
         :param query: 查询语句
         :param limit: 返回数量
+        :param search_strategy: 搜索策略
         :return: List[Dict]
+
+        返回结果为： 第一层为搜索batch,第二层为每个query具体的搜索结果
+        [[
+        {
+            'file_id':'456',
+            'file_name':'2025财务年度中期报告（繁体中文）.pdf'
+            'text':'具体chunk文档内容',
+            'score':0.95,
+        }
+        ]]
         """
         from pymilvus import AnnSearchRequest
         await self._ensure_collection_exists()
@@ -349,6 +409,7 @@ class KnowledgeService:
 
         return result
 
+    
     
         
     

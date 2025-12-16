@@ -19,3 +19,5 @@ backend/tests/
 
 # LangGraph checkpoint (SQLite files)
 backend/services/agent/data/langgraph_checkpoint*
+
+.pytest_cache/
