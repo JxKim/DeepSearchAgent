@@ -129,6 +129,16 @@ class LLMConfig(BaseModel):
             raise ValueError('温度值必须在0到2之间')
         return v
 
+# LiteLLM配置模型 (与 LLMConfig 结构类似，但字段名可能不同，这里为了映射 config.yaml 中的 lite-llm 字段)
+class LiteLLMConfig(BaseModel):
+    provider: str = Field(default="openai", description="LiteLLM提供商")
+    api_key: str = Field(..., description="API密钥")
+    base_url: str = Field(..., description="Base URL")
+    model: str = Field(..., description="模型名称")
+    temperature: float = 0.7
+    max_tokens: int = 2000
+    timeout: int = 60
+
 # 数据库配置模型
 class PostgresDatabaseConfig(BaseModel):
     host: str = "localhost"
@@ -189,7 +199,15 @@ class MilvusConfig(BaseModel):
     token: str = Field(default="root:Milvus", description="Milvus认证令牌")
     db_name :str = Field(default="smartagent_db", description="Milvus数据库名称")
     collection_name :str = Field(default="smartagent_collection", description="Milvus集合名称")
-    
+
+class RedisConfig(BaseModel):
+    """Redis 配置"""
+    host: str = "192.168.10.130"
+    port: int = 6379
+    password: Optional[str] = None
+    db: int = 0
+    url: Optional[str] = None  # 支持直接通过 URL 连接
+
 # 主配置模型
 class AppConfig(BaseModel):
     """应用主配置"""
@@ -199,6 +217,8 @@ class AppConfig(BaseModel):
     # 各模块配置
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    # 使用 alias 来映射 yaml 中的 "lite-llm" 到 python 属性 "lite_llm"
+    lite_llm: Optional[LiteLLMConfig] = Field(default=None, alias="lite-llm")
     postgres_database: PostgresDatabaseConfig = Field(default_factory=PostgresDatabaseConfig)
     tavily_api_key: str = Field(..., description="Tavily API密钥")
     server: ServerConfig = Field(default_factory=ServerConfig)
@@ -212,6 +232,8 @@ class AppConfig(BaseModel):
     embedding : Optional[EmbeddingConfig]=Field(default_factory=EmbeddingConfig)
     # 添加Milvus配置
     milvus : Optional[MilvusConfig]=Field(default_factory=MilvusConfig)
+    # 添加Redis配置
+    redis: Optional[RedisConfig] = None
 
 
 
