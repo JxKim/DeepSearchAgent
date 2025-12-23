@@ -2,6 +2,8 @@
 # 基础配置
 environment: "${ENVIRONMENT:development}"
 debug: "${DEBUG:true}"
+# 前端服务地址：用以配置跨域请求
+front_end_base_url: "${FRONT_END_BASE_URL}"
 
 # 日志配置
 logging:
@@ -110,11 +112,12 @@ milvus:
   collection_name: "smartagent_collection"
 
 embedding:
-  model: "/home/m1881/models/bge-base-zh-v1.5"
-  provider: "self-hosted"
+  provider: "${EMBEDDING_PROVIDER}"
+
+  model_path: "${EMBEDDING_MODEL_PATH}"
   api_key: "${EMBEDDING_API_KEY}"
-  base_url: "${EMBEDDING_BASE_URL:https://api.openai-proxy.org/v1}"
-  dim: 768 # 
+  base_url: "${EMBEDDING_BASE_URL}"
+  dim: "${EMBEDDING_MODEL_DIM:768}" # 
 
 mineru:
   base_url: "${MINERU_BASE_URL:http://localhost:8000}"

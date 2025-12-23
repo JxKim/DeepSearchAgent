@@ -1,4 +1,5 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.engine import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
 from config.loguru_config import get_logger
@@ -77,9 +78,11 @@ async def get_db() -> AsyncSession:
 
         # yield后的代码相当于 __exit__ / __aexit__ (正常情况)
         await session.commit()
-    except Exception:
+    except Exception as e:
+        logger.error(f"数据库操作出错: {e}")
         # yield后的代码相当于 __exit__ / __aexit__ (异常情况)
         await session.rollback()
+
         raise
     finally:
         # finally中的代码一定会执行

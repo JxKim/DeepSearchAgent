@@ -68,7 +68,7 @@ class KnowledgeService:
         
         
         if config.embedding.provider == "self-hosted":
-            self.embedding_model = HuggingFaceEmbeddings(model_name=config.embedding.model)
+            self.embedding_model = HuggingFaceEmbeddings(model_name=config.embedding.model_path)
         else:
             self.embedding_model = init_embeddings(
                 model=config.embedding.model, 

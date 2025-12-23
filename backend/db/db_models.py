@@ -63,6 +63,16 @@ class KnowledgeChunk(Base):
     vector_id = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class KnowledgeCategory(Base):
+    """知识库分类模型"""
+    __tablename__ = "knowledge_category"
+    
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class Token(Base):
     """令牌模型"""
@@ -97,3 +107,4 @@ class SessionSummary(Base):
     summary = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+

@@ -4,7 +4,7 @@
 BACKEND_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 ENV_FILE="$BACKEND_DIR/.env"
 # --- 数据目录配置 ---
-DB_DATA_DIR="$BACKEND_DIR/db/data"
+DB_DATA_DIR="$BACKEND_DIR/../data/db_data"
 mkdir -p "$DB_DATA_DIR"
 
 # 颜色定义

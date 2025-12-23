@@ -44,7 +44,7 @@ check_port_occupied() {
 }
 
 # --- 数据目录配置 ---
-DB_DATA_DIR="$BACKEND_DIR/db/data"
+DB_DATA_DIR="$BACKEND_DIR/../data/db_data"
 mkdir -p "$DB_DATA_DIR"
 
 # PostgreSQL 数据目录
@@ -149,6 +149,44 @@ if [[ "$MILVUS_URI" == *"localhost"* ]] || [[ "$MILVUS_URI" == *"127.0.0.1"* ]];
 else
     log_info "Milvus 配置为远程 URI ($MILVUS_URI)，跳过本地 Docker 启动."
 fi
+
+# ----Redis配置-------
+REDIS_HOST=${REDIS_HOST:-localhost}
+REDIS_PORT=${REDIS_PORT:-6379}
+if [ "$REDIS_HOST" == "localhost" ] || [ "$REDIS_HOST" == "127.0.0.1" ]; then
+    CONTAINER_NAME="smartagent_redis"
+    
+    if check_port_occupied "$REDIS_PORT"; then
+        log_info "Redis 端口 $REDIS_PORT 已被占用，跳过启动."
+    else
+        log_info "正在检查 Redis 容器 ($CONTAINER_NAME)..."
+        
+        if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+                 log_info "Redis 容器正在运行."
+            else
+                 log_info "启动现有的 Redis 容器..."
+                 docker start $CONTAINER_NAME
+            fi
+        else
+            log_info "创建并启动新的 Redis 容器..."
+            # 默认使用 redis:6
+            # 挂载数据目录
+            docker run -d \
+                --name $CONTAINER_NAME \
+                -p $PG_PORT:5432 \
+                -e POSTGRES_USER=$PG_USER \
+                -e POSTGRES_PASSWORD=$PG_PASS \
+                -e POSTGRES_DB=$PG_DB \
+                -v "$PG_DATA_DIR:/var/lib/postgresql/data" \
+                postgres:15
+        fi
+    fi
+else
+    log_info "PostgreSQL 配置为远程主机 ($PG_HOST)，跳过本地 Docker 启动."
+fi
+
+
 
 # --- 端口检测 ---
 log_info "等待几秒钟让服务启动..."

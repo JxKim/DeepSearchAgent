@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 from pwdlib import PasswordHash
 from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
+import jwt
 from jwt.exceptions import InvalidTokenError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,7 +52,7 @@ class AuthService:
 
     # 认证相关函数
     async def authenticate_user(self,username: str, password: str,db:AsyncSession) -> Optional[User]:
-        """用户认证"""
+        """用户认证，仅在用户登录时，验证用户名和密码是否匹配"""
         # db = self.get_db_session()
         # try:
         #     # 从数据库查询用户
@@ -85,50 +86,13 @@ class AuthService:
             id=str(uuid.uuid4()),
             user_id=user_id,
             token=token,
-            expires=expires
+            expires=datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         )
         db.add(db_token)
         await db.commit()
         await db.refresh(db_token)
 
         return token
-
-    # async def verify_token(self,token: str,db:AsyncSession) -> Optional[User]:
-    #     """验证令牌"""
-
-    #     result = await db.execute(select(DBToken).where(DBToken.token == token))
-    #     db_token = result.scalar_one_or_none()
-    #     if not db_token:
-    #         return None
-
-    #     # 检查令牌是否过期，使用带时区的时间
-    #     now_time = datetime.now(timezone.utc)
-    #     logger.info('当前时间为：', now_time)
-    #     logger.info('令牌过期时间为：', db_token.expires)
-    #     if now_time > db_token.expires:
-    #         # 删除过期令牌
-    #         await db.delete(db_token)
-    #         await db.commit()
-    #         return None
-
-    #     # 查询对应的用户
-    #     result = await db.execute(select(DBUser).where(DBUser.id == db_token.user_id))
-    #     db_user = result.scalar_one_or_none()
-    #     if not db_user:
-    #         return None
-
-    #     # 转换为响应模型
-    #     user = User(
-    #         id=db_user.id,
-    #         username=db_user.username,
-    #         email=db_user.email,
-    #         full_name=db_user.full_name,
-    #         created_at=db_user.created_at,
-    #         updated_at=db_user.updated_at,
-    #         is_active=db_user.is_active
-    #     )
-    #     return user
-
 
     async def login_user(self,login_data: LoginRequest,db:AsyncSession) -> Token:
         """用户登录"""
@@ -143,13 +107,6 @@ class AuthService:
             expires_in=config.security.access_token_expire_minutes * 60
         )
 
-    async def get_current_user(self,token: str,db:AsyncSession) -> User:
-        """获取当前用户"""
-        user = await get_current_user_from_token(token)
-        if not user:
-            raise ValueError("无效的令牌")
-        return user
-
     async def logout_user(self,token: str,db:AsyncSession) -> BaseResponse:
         """用户登出"""
 
@@ -160,27 +117,6 @@ class AuthService:
             await db.commit()
 
         return BaseResponse(message="登出成功")
-
-
-    async def get_user_profile(self,user_id: str,db:AsyncSession) -> User:
-        """获取用户信息"""
-
-        result = await db.execute(select(DBUser).where(DBUser.id == user_id))
-        db_user = result.scalar_one_or_none()
-        if not db_user:
-            raise ValueError("用户不存在")
-
-        # 转换为响应模型
-        user = User(
-            id=db_user.id,
-            username=db_user.username,
-            email=db_user.email,
-            full_name=db_user.full_name,
-            created_at=db_user.created_at,
-            updated_at=db_user.updated_at,
-            is_active=db_user.is_active
-        )
-        return user
 
     async def update_user_profile(self,user_id: str, update_data: UserUpdate,db:AsyncSession) -> User:
         """更新用户信息"""
@@ -194,6 +130,7 @@ class AuthService:
     async def register_user(self,user_data: UserCreate,db:AsyncSession) -> Token:
         """用户注册"""
         # 检查用户名是否已存在
+        logger.info(f"检查用户名 {user_data.username} 是否已存在")
         result = await db.execute(select(DBUser).where(DBUser.username == user_data.username))
         existing_user = result.scalar_one_or_none()
         if existing_user:

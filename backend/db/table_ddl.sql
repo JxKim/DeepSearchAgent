@@ -77,21 +77,7 @@ create index if not exists ix_users_id
 
 -- ## 知识库相关数据表：
 
-create table if not exists knowledge_categories
-(
-    id          varchar                  not null
-        primary key,
-    name        varchar                  not null,
-    description varchar                  not null,
-    created_at  timestamp with time zone default now(),
-    updated_at  timestamp with time zone default now()
-);
 
-alter table knowledge_categories
-    owner to smartagent_user;
-
-create unique index if not exists ix_knowledge_categories_name
-    on knowledge_categories (name);
 
 -- drop table if exists knowledge_files;
 create table if not exists knowledge_files
@@ -255,6 +241,22 @@ alter table knowledge_chunks
 
 create index if not exists ix_knowledge_chunks_file_id
     on knowledge_chunks (file_id);
+
+create table if not exists knowledge_category
+(
+    id          bigint                  not null primary key,
+    user_id     varchar                  not null,
+    name   varchar                  not null,
+    description text null,
+    created_at  timestamp with time zone default now(),
+    updated_at  timestamp with time zone default now()
+);
+
+alter table knowledge_category
+    owner to smartagent_user;
+
+create index if not exists ix_knowledge_category_user_id
+    on knowledge_category (user_id);
 
 
 -- 短时记忆：存储完整的对话历史

@@ -189,11 +189,11 @@ class StorageConfig(BaseModel):
 
 class EmbeddingConfig(BaseModel):
     """嵌入模型配置"""
-    model: str = Field(default="text-embedding-3-small", description="嵌入模型名称")
-    provider: str = Field(default="openai", description="嵌入模型提供方")
+    model_path: str = Field(..., description="嵌入模型路径")
+    provider: str = Field(..., description="嵌入模型提供方")
     api_key: str = Field(..., description="嵌入模型API密钥")
     base_url: str = Field(..., description="嵌入模型API基础URL")
-    dim: int = Field(default=1536, description="嵌入向量维度")
+    dim: int = Field(..., description="嵌入向量维度")
 
 class MilvusConfig(BaseModel):
     """Milvus配置"""
@@ -245,6 +245,9 @@ class AppConfig(BaseModel):
     mineru : Optional[MineruConfig]=Field(default_factory=MineruConfig)
     # 添加Redis配置
     redis: Optional[RedisConfig] = None
+
+    # 前端服务地址：用以配置跨域请求
+    front_end_base_url: str = Field(..., description="前端服务基础URL")
 
 
 

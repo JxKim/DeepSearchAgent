@@ -2,6 +2,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from config.loader import get_config
 from db.redis import SimpleRedisSaver
 from work_flow.graph import create_graph
+from config.loguru_config import get_logger
+logger = get_logger(__name__)
 
 # 尝试导入 Redis 相关库
 try:
@@ -16,7 +18,7 @@ async def get_redis_checkpointer():
     如果 Redis 不可用或连接失败，自动降级为 MemorySaver
     """
     if not HAS_REDIS:
-        print("ℹ️ 未安装 Redis 库，使用 MemorySaver")
+        logger.info("ℹ️ 未安装 Redis 库，使用 MemorySaver")
         return MemorySaver()
 
     try:
@@ -32,7 +34,7 @@ async def get_redis_checkpointer():
         else:
             redis_url = "redis://localhost:6379/0"
 
-        print(f"🔄 正在连接 Redis: {redis_url} ...")
+        logger.info(f"🔄 正在连接 Redis: {redis_url} ...")
         
         # 建立连接
         redis_client = Redis.from_url(redis_url)
@@ -40,11 +42,11 @@ async def get_redis_checkpointer():
         await redis_client.ping()
         
         checkpointer = SimpleRedisSaver(redis_client)
-        print("✅ Redis Checkpointer (Custom) 就绪")
+        logger.info("✅ Redis Checkpointer (Custom) 就绪")
         return checkpointer
         
     except Exception as e:
-        print(f"❌ Redis 连接失败: {e}，降级使用 MemorySaver")
+        logger.error(f"❌ Redis 连接失败: {e}，降级使用 MemorySaver")
         return MemorySaver()
 
 async def run_workflow(session_id: str, user_id: str, original_query: str, thread_id: str = None, checkpointer=None):

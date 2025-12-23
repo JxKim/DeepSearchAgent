@@ -59,7 +59,7 @@ app = FastAPI(
 # 配置CORS中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],  # 生产环境中应限制为特定域名
+    allow_origins=["*"],  # 生产环境中应限制为特定域名
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,7 +87,7 @@ if __name__ == "__main__":
     port = config.server.port
     uvicorn.run(
         "main:app",
-        host="127.0.0.1",
+        host="0.0.0.0",
         port=port,
         log_level="error",
         reload=True,

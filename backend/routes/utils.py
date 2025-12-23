@@ -30,8 +30,11 @@ async def get_current_user_from_token(authorization: Optional[str] = Header(None
     session = SessionLocal()
     try:
         payload = jwt.decode(token,config.security.secret_key,algorithms=[config.security.algorithm])
-        user_id = payload.get("user_id")
+        user_id = payload.get("sub")
         user = await auth_service.get_user_by_id(user_id=user_id,db=session)
+        if not user:
+            logger.error(f'用户ID {user_id} 不存在')
+            raise HTTPException(status_code=404, detail="用户不存在")
         logger.debug(f'令牌验证成功，返回用户: {user.id}')
     except InvalidTokenError:
         logger.error('无效的令牌')

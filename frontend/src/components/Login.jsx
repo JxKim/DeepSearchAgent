@@ -40,14 +40,18 @@ const Login = ({ onLogin, onClose }) => {
       const token = response.data.access_token;
       
       // 调用验证令牌API获取用户信息
-      const verifyResponse = await api.post('/auth/verify', { token });
+      // 显式传递token参数和Authorization头，确保后端能正确识别
+      const meResponse = await api.get('/auth/me', { 
+        params: { token },
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       
       // 构建用户数据
       const userData = {
-        id: verifyResponse.data.data.id,
-        username: verifyResponse.data.data.username,
-        email: verifyResponse.data.data.email,
-        full_name: verifyResponse.data.data.full_name,
+        id: meResponse.data.id,
+        username: meResponse.data.username,
+        email: meResponse.data.email,
+        full_name: meResponse.data.full_name,
         token: token
       };
       
