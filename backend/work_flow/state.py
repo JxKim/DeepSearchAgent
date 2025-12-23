@@ -20,21 +20,6 @@ class OverAllState(TypedDict):
    # 生成最终回答节点
    final_answer:str  #最终回答
 
-   rag_temp_str:str  #RAG模板字符串
+   rag_output:str  #RAG检索输出
 
-
-# RAG检索子图状态
-class RAGState(TypedDict):
-   rag_temp_str:str  #RAG模板字符串
-
-# Tavily搜索子图节点  
-class TavilyState(TypedDict):
-   tavily_temp_str:str  #Tavily模板字符串
-
-#RAG & Tavliy 混合搜索子图节点
-class MixProcessState(RAGState, TavilyState):
-   pass  #继承父类
-
-# 后续输出功能子图
-class OutputState(TypedDict):
-   output_temp_str:str  #后续输出功能子图
+   tavily_output:str #tavily检索输出

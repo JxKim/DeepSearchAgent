@@ -73,3 +73,27 @@ class Token(Base):
     token = Column(String, unique=True, index=True, nullable=False)
     expires = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ConversationHistory(Base):
+    """短时记忆模型"""
+    __tablename__ = "conversation_history"
+
+    id = Column(String, primary_key=True, index=True)
+    session_id = Column(String, index=True, nullable=False)
+    user_id = Column(String, nullable=False)
+    user_input = Column(String, nullable=False)
+    agent_output = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class SessionSummary(Base):
+    """长时记忆模型"""
+    __tablename__ = "session_summaries"
+
+    id = Column(String, primary_key=True, index=True)
+    session_id = Column(String, unique=True, index=True, nullable=False)
+    user_id = Column(String, nullable=False)
+    summary = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
