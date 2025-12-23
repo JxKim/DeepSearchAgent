@@ -1,4 +1,4 @@
-from state import OverAllState
+from work_flow.state import OverAllState
 
 
 async def long_term_memory_import(state: OverAllState) -> dict:
@@ -19,6 +19,16 @@ async def long_term_memory_import(state: OverAllState) -> dict:
     # 假设 session_id 已经存在于 state 中，或者从上下文获取
     # 这里为了演示暂时使用硬编码或从 state 获取
     session_id = state.get("session_id", "session_001") 
+
+    # --- 优化策略：内存状态优先 ---
+    # 检查 state 中是否已经存在 conversation_history
+    # 存在 -> 说明是从 MemorySaver (RAM) 恢复的热数据，直接跳过 DB 读取
+    if state.get("conversation_history"):
+        print(f"✅ [内存命中] 检测到活跃会话状态 (历史条数: {len(state['conversation_history'])})，跳过数据库导入。")
+        return {}
+    
+    # 不存在 -> 说明是冷启动（新会话或服务刚重启），需要从数据库加载
+    print(f"⚠️ [内存未命中] 正在从数据库加载会话 {session_id} 的历史记录...")
 
     async with SessionLocal() as db:
         # 0. 检查 Session 是否存在，不存在则创建
@@ -92,7 +102,8 @@ async def title_generate(state: OverAllState) -> dict:
     prompt = AgentPrompts.SESSION_TITLE_SUMMARY.format(user_input=f"用户: {original_query}")
     
     # 获取不带工具的 Agent
-    agent = await get_agent(system_prompt=prompt)
+    # 标题生成使用 lite 模型 (速度快)
+    agent = await get_agent(system_prompt=prompt, llm_type="lite")
     
     # 调用 Agent
     response = await agent.ainvoke({"messages": [HumanMessage(content=original_query)]})
@@ -284,7 +295,8 @@ async def memory_summary(state: OverAllState) -> dict:
         )
 
         # 调用 Agent 生成新摘要
-        agent = await get_agent(system_prompt=prompt)
+        # 摘要生成使用 lite 模型 (速度快且足够胜任)
+        agent = await get_agent(system_prompt=prompt, llm_type="lite")
         response = await agent.ainvoke({"messages": [HumanMessage(content="请更新摘要")]})
         new_summary = response["messages"][-1].content.strip()
 
@@ -301,9 +313,21 @@ async def memory_summary(state: OverAllState) -> dict:
             db.add(new_summary_obj)
         
         await db.commit()
-        print(f"长时记忆更新完成: {new_summary[:20]}...")
+        print("长时记忆摘要更新完成")
 
-    return {}
+    # --- 关键步骤：更新状态以同步到 Checkpointer ---
+    # 我们必须把本轮对话追加到 conversation_history 中并返回
+    # 这样 MemorySaver 才会保存最新的历史，供下一次"内存命中"使用
+    updated_history = conversation_history + [(original_query, final_answer)]
+    
+    # 简单的内存管理：限制只保留最近 10 轮，防止内存无限膨胀
+    if len(updated_history) > 10:
+        updated_history = updated_history[-10:]
+
+    return {
+        "memory_summary": new_summary,
+        "conversation_history": updated_history
+    }
 
 async def rag_process(state: OverAllState) -> dict:
     """

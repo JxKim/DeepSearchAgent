@@ -2,31 +2,9 @@ from typing import Literal
 
 from langgraph.constants import START
 from langgraph.graph import StateGraph, END
-from state import OverAllState
-import node
-
-#  创建 StateGraph实例
-builder = StateGraph(OverAllState)
-
-#  注册节点
-#  记忆导入节点
-builder.add_node("long_term_memory_import", node.long_term_memory_import)
-#  标题生成节点
-builder.add_node("title_generate", node.title_generate)
-#  意图识别节点
-builder.add_node("intention_recognition", node.intention_recognition)
-#  汇合节点
-builder.add_node("convergence_node", node.convergence_node, defer = True)
-#  llm生成回答节点
-builder.add_node("llm_response", node.llm_response)
-#  总结记忆节点
-builder.add_node("memory_summary", node.memory_summary)
-#  rag检索节点
-builder.add_node("rag_process",node.rag_process)
-#  tavily检索节点
-builder.add_node("tavily_process",node.tavily_process)
-#  混合检索节点
-builder.add_node("mix_process",node.mix_process)
+from langgraph.checkpoint.memory import MemorySaver
+from work_flow.state import OverAllState
+from work_flow import node
 
 # 条件边的路由函数
 def route_condition(state: OverAllState) -> Literal["mix", "rag", "tavily"]:
@@ -38,7 +16,19 @@ def route_condition(state: OverAllState) -> Literal["mix", "rag", "tavily"]:
    else:
        return "tavily"
 
-def main_graph():
+def main_graph(checkpointer=None):
+   # 每次调用时创建新的 builder，避免重复添加节点报错
+   builder = StateGraph(OverAllState)
+
+   builder.add_node("long_term_memory_import", node.long_term_memory_import)
+   builder.add_node("title_generate", node.title_generate)
+   builder.add_node("intention_recognition", node.intention_recognition)
+   builder.add_node("convergence_node", node.convergence_node, defer = True)
+   builder.add_node("llm_response", node.llm_response)
+   builder.add_node("memory_summary", node.memory_summary)
+   builder.add_node("rag_process",node.rag_process)
+   builder.add_node("tavily_process",node.tavily_process)
+   builder.add_node("mix_process",node.mix_process)
 
    builder.add_edge(START,"long_term_memory_import")
    builder.add_edge(START,"title_generate")
@@ -59,7 +49,17 @@ def main_graph():
    builder.add_edge("rag_process","llm_response")
    builder.add_edge("llm_response","memory_summary")
    builder.add_edge("memory_summary",END)
+   
+   # 如果没有传入 checkpointer，则不启用持久化
+   if checkpointer:
+       return builder.compile(checkpointer=checkpointer)
    return builder.compile()
 
-graph = main_graph()
+# 提供工厂函数
+def create_graph(checkpointer=None):
+    return main_graph(checkpointer)
+
+# 默认实例 (使用 MemorySaver，方便测试和单机运行)
+default_saver = MemorySaver()
+graph = create_graph(checkpointer=default_saver)
 graph.invoke
