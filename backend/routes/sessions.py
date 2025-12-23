@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, Request
 from typing import List, Optional
 
 from langchain_core.messages import HumanMessage, AIMessage
@@ -14,6 +14,9 @@ from services.auth_service import auth_service
 from config.loguru_config import get_logger
 from routes.utils import get_current_user_from_token
 from db.database import get_db
+from work_flow.process import run_workflow, stream_workflow
+import json
+
 logger = get_logger(__name__)
 
 
@@ -48,6 +51,83 @@ async def get_session(session_id: str, current_user: User = Depends(get_current_
     if not session:
         raise HTTPException(status_code=404, detail="会话未找到")
     return session
+
+@router.post("/{session_id}/workflow_test")
+async def test_workflow(
+    session_id: str, 
+    query: str, 
+    request: Request,
+    current_user: User = Depends(get_current_user_from_token)
+):
+    """
+    [测试接口] 运行 DeepResearch 工作流
+    """
+    # 1. 获取全局 checkpointer
+    if not hasattr(request.app.state, "checkpointer"):
+        raise HTTPException(status_code=500, detail="Redis Checkpointer not initialized")
+    
+    checkpointer = request.app.state.checkpointer
+    
+    # 2. 运行工作流
+    try:
+        result = await run_workflow(
+            session_id=session_id,
+            user_id=current_user.id,
+            original_query=query,
+            thread_id=session_id,
+            checkpointer=checkpointer
+        )
+        return {
+            "session_id": session_id,
+            "query": query,
+            "final_answer": result.get("final_answer"),
+            "status": "success"
+        }
+    except Exception as e:
+        logger.error(f"Workflow execution failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{session_id}/workflow_stream")
+async def stream_workflow_endpoint(
+    session_id: str, 
+    query: str, 
+    request: Request,
+    current_user: User = Depends(get_current_user_from_token)
+):
+    """
+    [测试接口] 流式运行 DeepResearch 工作流 (SSE)
+    """
+    # 1. 获取全局 checkpointer
+    if not hasattr(request.app.state, "checkpointer"):
+        raise HTTPException(status_code=500, detail="Redis Checkpointer not initialized")
+    
+    checkpointer = request.app.state.checkpointer
+    
+    # 2. 定义流式生成器
+    async def event_generator():
+        try:
+            # 调用流式工作流函数
+            async for chunk in stream_workflow(
+                session_id=session_id,
+                user_id=current_user.id,
+                original_query=query,
+                thread_id=session_id,
+                checkpointer=checkpointer
+            ):
+                # 转换为 SSE 格式: "data: {json}\n\n"
+                # ensure_ascii=False 保证中文正常显示
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            
+            # 发送结束标记
+            yield "data: [DONE]\n\n"
+            
+        except Exception as e:
+            logger.error(f"Stream workflow execution failed: {e}")
+            error_msg = json.dumps({"event": "error", "error": str(e)}, ensure_ascii=False)
+            yield f"data: {error_msg}\n\n"
+
+    # 3. 返回 StreamingResponse
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @router.post("/{session_id}/messages/", response_model=Message)
 async def add_message(session_id: str, message_data: MessageCreate, current_user: User = Depends(get_current_user_from_token),db=Depends(get_db)):

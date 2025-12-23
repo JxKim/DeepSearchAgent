@@ -78,6 +78,8 @@ dependencies = [
     "langgraph-checkpoint==3.0.1",
     "langgraph-checkpoint-postgres==3.0.1",
     "langgraph-checkpoint-sqlite==3.0.0",
+    "langgraph-checkpoint-redis>=0.1.0",
+    "redis>=5.0.0",
     "langgraph-cli==0.4.3",
     "langgraph-prebuilt==1.0.2",
     "langgraph-sdk==0.2.9",

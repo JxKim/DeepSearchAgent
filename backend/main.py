@@ -13,6 +13,8 @@ from config.loader import get_config
 # 直接导入路由模块
 from routes import auth, sessions, system
 from db.database import db_startup,db_shutdown
+from work_flow.process import get_redis_checkpointer
+
 # 初始化配置和日志
 config = get_config()
 setup_logging()
@@ -22,11 +24,20 @@ async def startup(app):
     """应用启动时执行"""
     logger.info("SmartAgent API 服务启动成功")
     await db_startup()
+    
+    # 初始化 Redis Checkpointer
+    logger.info("正在初始化 Redis Checkpointer...")
+    app.state.checkpointer = await get_redis_checkpointer()
 
 async def cleanup(app):
     """
     应用关闭时，执行操作
     """
+    # 关闭 Redis 连接
+    if hasattr(app.state, "checkpointer") and hasattr(app.state.checkpointer, "client"):
+        logger.info("正在关闭 Redis 连接...")
+        await app.state.checkpointer.client.aclose()
+        
     await db_shutdown()
     logger.info("SmartAgent API 服务已关闭")
 
