@@ -45,10 +45,7 @@ class KnowledgeService:
         # retry_layer = opendal.layers.RetryLayer(max_times=3, factor=2.0, jitter=True)
         # self.op = AsyncOperator(scheme=scheme)
 
-        self.milvus_client = AsyncMilvusClient(
-            uri=config.milvus.uri,
-            token=config.milvus.token
-        )
+        self._milvus_client = None
         # 判断collection是否存在，如果不存在进行初始化
 
         # await self._ensure_collection_exists()
@@ -62,6 +59,15 @@ class KnowledgeService:
         
         # 此处采用多线程方式进行解析，实际生产环境下，可以单独配置celery worker进行异步解析
         self.parse_executor = ThreadPoolExecutor(max_workers=10)
+
+    @property
+    def milvus_client(self):
+        if self._milvus_client is None:
+            self._milvus_client = AsyncMilvusClient(
+                uri=config.milvus.uri,
+                token=config.milvus.token
+            )
+        return self._milvus_client
 
     async def _ensure_collection_exists(self):
         if not await self.milvus_client.has_collection(collection_name=config.milvus.collection_name):
@@ -363,9 +369,7 @@ class KnowledgeService:
         from pymilvus import AnnSearchRequest
         await self._ensure_collection_exists()
         
-        from pymilvus import AnnSearchRequest
 
-        query_text = "white headphones, quiet and comfortable"
         query_dense_vector = await self.embedding_model.aembed_query(query)
         
 
@@ -378,7 +382,7 @@ class KnowledgeService:
         request_1 = AnnSearchRequest(**search_param_1)
 
         search_param_2 = {
-            "data": [query_text],
+            "data": [query],
             "anns_field": "text_sparse",
             "param": {"drop_ratio_search": 0.2},
             "limit": 2
