@@ -97,14 +97,19 @@ async def stream_workflow_endpoint(
     """
     [测试接口] 流式运行 DeepResearch 工作流 (SSE)
     """
+    logger.info(f"收到流式请求: session_id={session_id}, query={query}")
+    
     # 1. 获取全局 checkpointer
     if not hasattr(request.app.state, "checkpointer"):
+        logger.error("Redis Checkpointer not initialized")
         raise HTTPException(status_code=500, detail="Redis Checkpointer not initialized")
     
     checkpointer = request.app.state.checkpointer
+    logger.info("Checkpointer 获取成功")
     
     # 2. 定义流式生成器
     async def event_generator():
+        logger.info("开始执行 event_generator")
         try:
             # 调用流式工作流函数
             async for chunk in stream_workflow(

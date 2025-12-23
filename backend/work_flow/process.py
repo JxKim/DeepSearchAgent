@@ -115,15 +115,40 @@ async def stream_workflow(session_id: str, user_id: str, original_query: str, th
         
     config = {"configurable": {"thread_id": thread_id}}
     
-    # 使用 astream 获取流式更新 (stream_mode="updates" 只返回状态更新)
+    # 使用 astream_events 获取更细粒度的流式更新 (包括 LLM 的 token 流)
     try:
-        async for event in graph.astream(initial_state, config=config, stream_mode="updates"):
-            for node_name, node_output in event.items():
-                yield {
-                    "event": "node_update",
-                    "node": node_name,
-                    "data": node_output
-                }
+        async for event in graph.astream_events(initial_state, config=config, version="v2"):
+            kind = event["event"]
+            
+            # 1. 处理 LLM 流式输出 (Token 级别)
+            if kind == "on_chat_model_stream":
+                # 获取当前生成的 token
+                content = event["data"]["chunk"].content
+                if content:
+                    yield {
+                        "event": "llm_stream",
+                        "node": "llm_response", # 假设主要在 llm_response 节点生成
+                        "data": content
+                    }
+            
+            # 2. 处理节点状态更新 (Node 级别)
+            elif kind == "on_chain_end":
+                # 筛选出图节点的结束事件
+                if event["name"] and event["name"] in graph.nodes:
+                    node_name = event["name"]
+                    # 注意：on_chain_end 的 output 可能是 State update，也可能是其他
+                    # 这里我们主要关注节点执行完成的信号，具体数据可能需要根据节点返回值结构调整
+                    # 为了保持兼容性，我们可以简化处理，或者只发送特定节点的结束信号
+                    
+                    # 只有当 output 是字典且包含更新时才发送
+                    output = event["data"].get("output")
+                    if isinstance(output, dict):
+                         yield {
+                            "event": "node_update",
+                            "node": node_name,
+                            "data": output
+                        }
+                        
     except Exception as e:
         print(f"❌ 流式执行出错: {e}")
         yield {"event": "error", "error": str(e)}
