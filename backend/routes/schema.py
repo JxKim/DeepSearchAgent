@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Optional,Dict, Any
 from datetime import datetime
 from enum import Enum
 
@@ -219,6 +219,7 @@ class KnowledgeFileBase(BaseModel):
     chunk_num: int = 0
     search_type: SearchType = SearchType.VECTOR
     parse_status: ParseStatus = ParseStatus.PENDING # 对应获取解析状态
+    category_id: Optional[str] = None
     
 class KnowledgeFile(KnowledgeFileBase):
     id: str
@@ -247,3 +248,18 @@ class RecallResult(BaseModel):
 
 class RecallTestResponse(BaseResponse):
     data: List[RecallResult] | None 
+
+class KnowledgeCategoryBase(BaseModel):
+    name: str
+    description: str
+
+class KnowledgeCategoryCreate(KnowledgeCategoryBase):
+    pass
+
+class KnowledgeCategory(KnowledgeCategoryBase):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+class KnowledgeCategoryListResponse(BaseResponse):
+    data: List[KnowledgeCategory]

@@ -1,21 +1,29 @@
 """
 Docstring for backend.services.knowledge_service
 构建知识库相关接口
+
+todo: 
+1、解析过程是否使用线程池
+2、如果使用，那是否还需要使用协程
+3、如果不使用，怎么实现异步提交任务的过程
 """
 import opendal
 from opendal import Operator, AsyncOperator
 from pymilvus import MilvusClient, DataType, FunctionType, Function, AsyncMilvusClient
 from langchain.embeddings import init_embeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from config.loader import get_config
 from config.loguru_config import get_logger
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from db.db_models import KnowledgeFile, KnowledgeChunk
+from db.db_models import KnowledgeFile, KnowledgeChunk, KnowledgeCategory
 import uuid
+import time
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from langchain_core.documents import Document
+from mineru_vl_utils import MinerUClient
 config = get_config()
 logger = get_logger()
 
@@ -58,13 +66,15 @@ class KnowledgeService:
         )
         
         
-        # 初始化embedding模型
-        self.embedding_model = init_embeddings(
-            model=config.embedding.model, 
-            provider=config.embedding.provider, 
-            api_key=config.embedding.api_key, 
-            base_url=config.embedding.base_url)
         
+        if config.embedding.provider == "self-hosted":
+            self.embedding_model = HuggingFaceEmbeddings(model_name=config.embedding.model)
+        else:
+            self.embedding_model = init_embeddings(
+                model=config.embedding.model, 
+                provider=config.embedding.provider, 
+                api_key=config.embedding.api_key, 
+                base_url=config.embedding.base_url)
         # 此处采用多线程方式进行解析，实际生产环境下，可以单独配置celery worker进行异步解析
         self.parse_executor = ThreadPoolExecutor(max_workers=10)
 
@@ -170,7 +180,7 @@ class KnowledgeService:
         files = result.scalars().all()
         return files
 
-    async def upload_file(self, user_id: str, file_name: str, file_content: bytes,db: AsyncSession):
+    async def upload_file(self, user_id: str, file_name: str, file_content: bytes,db: AsyncSession,category_id: str = None):
         """
         上传文件：
             1、生成唯一的文件ID
@@ -202,14 +212,15 @@ class KnowledgeService:
             file_type=file_name.split('.')[-1],
             storage_path=file_path,
             is_parsed=False,
-            parse_status="pending"
+            parse_status="pending",
+            category_id=category_id
         )
         db.add(new_file)
         await db.commit()
         await db.refresh(new_file)
         return new_file
     
-    async def delete_file(self, user_id: str, file_id: str,db: AsyncSession):
+    async def delete_file(self, user_id: str, file_id: str,db: AsyncSession)->bool:
         """
         删除文件
         :param user_id: 用户ID
@@ -273,35 +284,26 @@ class KnowledgeService:
         在线程池中运行的解析任务
         使用同步方式处理
         """
-        from db.database import engine
-        from sqlalchemy.orm import sessionmaker, Session
-        from sqlalchemy import create_engine
+        from db.database import SyncSessionLocal
         
-        # 创建同步的数据库会话
-        # 注意：这里我们使用 engine.sync_engine 来创建同步连接
-        # 或者重新创建一个同步 engine
-        
-        pg_connection_url = (f"postgresql+psycopg://"
-                     f"{config.postgres_database.user}:{config.postgres_database.password}"
-                     f"@{config.postgres_database.host}:{config.postgres_database.port}/{config.postgres_database.dbname}")
-        
-        sync_engine = create_engine(pg_connection_url)
-        SyncSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=sync_engine)
-        
+        # 确保数据库已初始化 (在某些极端的测试或脚本场景下可能未初始化)
+        if not SyncSessionLocal:
+             logger.error("SyncSessionLocal is not initialized!")
+             return
+
         try:
             self._process_file_parsing_sync(user_id, file_id, SyncSessionLocal)
         except Exception as e:
             # 记录错误日志
             logger.error(f"Error in parse task: {e}")
-        finally:
-             sync_engine.dispose()
 
     def _process_file_parsing_sync(self, user_id: str, file_id: str, SessionLocal):
         """
         实际的解析逻辑 (同步版本)
         """
         import magic
-        from services.parsers.pdf_parser import PDFParser
+        from services.parsers.pdf_parser import MineruPDFLoader
+        from services.parsers.markdown_parser import MarkdownParser
         from services.parsers.csv_parser import CSVParser
         import os
         
@@ -327,15 +329,16 @@ class KnowledgeService:
                 # 3. 根据文件类型选择解析器
                 parser = None
                 if mime_type == 'application/pdf':
-                    parser = PDFParser()
+                    parser = MineruPDFLoader()
                 elif mime_type == 'text/csv' or mime_type == 'text/plain': # csv sometimes detected as text/plain
                      if file_record.file_name.endswith('.csv'):
                          parser = CSVParser()
                 documents = []
                 if parser:
-                    # 临时保存文件以便解析器使用（如果解析器需要文件路径）
+                    # 临时保存文件以便解析器使用
                     import tempfile
                     try:
+                        
                         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_record.file_type}") as tmp_file:
                             tmp_file.write(file_content)
                             tmp_path = tmp_file.name
@@ -349,17 +352,22 @@ class KnowledgeService:
                         # 同步生成 embedding
                         texts = [doc.page_content for doc in documents]
                         milvus_data = []
-                        logger.info(f"documents len: {len(documents)}")
-                        for i, doc in enumerate(documents[0:30]):
+                        logger.info(f"documents len: {len(documents)},开始将数据写入至Milvus")
+                        start_time = time.time()
+                        for i, doc in enumerate(documents):
                             milvus_data.append({
                                 "file_id": file_id,
                                 "file_name": file_record.file_name,
                                 "text": doc.page_content,
                                 "text_dense": self.embedding_model.embed_documents([doc.page_content])[0] # 注意这里可能需要优化，批量处理
                             })
-                            
+                        end_time = time.time()
+                        logger.info(f"成功将 {len(milvus_data)} 条数据生成embedding, 耗时: {end_time - start_time} 秒")
+
+                        start_time = time.time()    
                         self.sync_milvus_client.insert(collection_name=self.milvus_collection_name, data=milvus_data)
-                        logger.info(f"成功将 {len(milvus_data)} 条数据写入Milvus")
+                        end_time = time.time()
+                        logger.info(f"成功将 {len(milvus_data)} 条数据写入Milvus, 耗时: {end_time - start_time} 秒")
                         logger.info(f"Parsed {len(documents)} documents from {file_record.file_name}")
                     except Exception as e:
                         logger.error(f"Error parsing {file_record.file_name}: {e}")
@@ -383,7 +391,7 @@ class KnowledgeService:
                     db.commit()
 
     def _ensure_collection_exists_sync(self):
-        self.sync_milvus_client.drop_collection(collection_name=self.milvus_collection_name)
+        
         if not self.sync_milvus_client.has_collection(collection_name=self.milvus_collection_name):
             logger.info(f"Collection {self.milvus_collection_name} not found, initializing...")
             self._init_collection_sync()
@@ -533,7 +541,7 @@ class KnowledgeService:
         # 召回策略
         ranker = Function(
             name="rrf",
-            input_field_names=[], # Must be an empty list
+            input_field_names=[], # 
             function_type=FunctionType.RERANK,
             params={
                 "reranker": "rrf", 
@@ -578,7 +586,72 @@ class KnowledgeService:
             })
         return data
     
+    async def create_category(self, name: str, description: str, db: AsyncSession):
+        """
+        创建知识库类别
+        :param name: 类别名称
+        :param description: 类别描述
+        :return: KnowledgeCategory
+        """
+        # 检查类别名称是否已存在
+        result = await db.execute(select(KnowledgeCategory).where(KnowledgeCategory.name == name))
+        if result.scalars().first():
+            raise ValueError(f"Category with name '{name}' already exists")
+
+        new_category = KnowledgeCategory(
+            id=str(uuid.uuid4()),
+            name=name,
+            description=description
+        )
+        db.add(new_category)
+        await db.commit()
+        await db.refresh(new_category)
+        return new_category
+
+    async def get_all_categories(self, db: AsyncSession):
+        """
+        获取所有知识库类别
+        :return: List[KnowledgeCategory]
+        """
+        result = await db.execute(select(KnowledgeCategory))
+        categories = result.scalars().all()
+        return categories
+
+    async def get_files_by_category(self, user_id: str, category_id: str, db: AsyncSession):
+        """
+        获取指定类别的所有文件
+        :param user_id: 用户ID
+        :param category_id: 类别ID
+        :return: List[KnowledgeFile]
+        """
+        result = await db.execute(
+            select(KnowledgeFile)
+            .where(KnowledgeFile.user_id == user_id, KnowledgeFile.category_id == category_id)
+        )
+        files = result.scalars().all()
+        return files
     
+    async def get_knowledge_summary(self, user_id: str, db: AsyncSession)->str:
+        """
+        以人类可读的形式，展示当前知识库当中，包含的类别，描述信息
+        :param user_id: 用户ID
+        :return: str
+        """
+        # 获取所有类别
+        categories = await self.get_all_categories(db)
+        
+        summary = "当前知识库包含以下类别：\n"
+        for category in categories:
+            summary += f"- {category.name}: {category.description}\n"
+            # 获取该类别下的文件数量
+            result = await db.execute(
+                select(func.count(KnowledgeFile.id))
+                .where(KnowledgeFile.user_id == user_id, KnowledgeFile.category_id == category.id)
+            )
+            file_count = result.scalar()
+            summary += f"  包含文件数量: {file_count}\n"
+            
+        return summary
         
     
 

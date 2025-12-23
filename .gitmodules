@@ -1,0 +1,3 @@
+[submodule "backend/mineru"]
+	path = backend/mineru
+	url = https://github.com/opendatalab/MinerU.git

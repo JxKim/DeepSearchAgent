@@ -77,6 +77,22 @@ create index if not exists ix_users_id
 
 -- ## 知识库相关数据表：
 
+create table if not exists knowledge_categories
+(
+    id          varchar                  not null
+        primary key,
+    name        varchar                  not null,
+    description varchar                  not null,
+    created_at  timestamp with time zone default now(),
+    updated_at  timestamp with time zone default now()
+);
+
+alter table knowledge_categories
+    owner to smartagent_user;
+
+create unique index if not exists ix_knowledge_categories_name
+    on knowledge_categories (name);
+
 -- drop table if exists knowledge_files;
 create table if not exists knowledge_files
 (
@@ -90,6 +106,7 @@ create table if not exists knowledge_files
     is_parsed   boolean                  default false,
     parse_status varchar                 default 'pending',
     chunk_count integer                  default 0,
+    category_id varchar,
     created_at  timestamp with time zone default now(),
     updated_at  timestamp with time zone default now()
 );

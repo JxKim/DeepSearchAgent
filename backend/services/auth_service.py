@@ -2,7 +2,9 @@ from passlib.context import CryptContext
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 import uuid
-
+from pwdlib import PasswordHash
+from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
+from jwt.exceptions import InvalidTokenError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +18,12 @@ from config.loguru_config import get_logger
 from config.loader import get_config
 logger = get_logger(__name__)
 config = get_config()
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+pwd_context = PasswordHash.recommended()
+# 使用openssl rand -hex 32
+SECRET_KEY = config.security.secret_key
+ALGORITHM = config.security.algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = config.security.access_token_expire_minutes
+# pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 # 密码哈希辅助函数
 def get_password_hash(password: str) -> str:
     """生成密码哈希"""
@@ -26,6 +33,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """验证密码"""
     return pwd_context.verify(plain_password, hashed_password)
 
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """创建访问令牌"""
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + expires_delta
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
 class AuthService:
 
     user_tokens: dict = {}
@@ -33,18 +48,6 @@ class AuthService:
 
     def __init__(self):
         pass
-
-    # 数据库会话获取函数
-    async def get_db_session(self):
-        """获取数据库会话"""
-        db = await SessionLocal()
-        try:
-            return db
-        except Exception as e:
-            await db.close()
-            raise e
-        finally:
-            await db.close()
 
     # 认证相关函数
     async def authenticate_user(self,username: str, password: str,db:AsyncSession) -> Optional[User]:
@@ -77,7 +80,7 @@ class AuthService:
         """创建访问令牌"""
         token = str(uuid.uuid4())
         # 使用带时区的时间
-        expires = datetime.now(timezone.utc) + timedelta(minutes=config.security.access_token_expire_minutes)
+        token = create_access_token({"sub": user_id},expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))    
         db_token = DBToken(
             id=str(uuid.uuid4()),
             user_id=user_id,
@@ -90,41 +93,41 @@ class AuthService:
 
         return token
 
-    async def verify_token(self,token: str,db:AsyncSession) -> Optional[User]:
-        """验证令牌"""
+    # async def verify_token(self,token: str,db:AsyncSession) -> Optional[User]:
+    #     """验证令牌"""
 
-        result = await db.execute(select(DBToken).where(DBToken.token == token))
-        db_token = result.scalar_one_or_none()
-        if not db_token:
-            return None
+    #     result = await db.execute(select(DBToken).where(DBToken.token == token))
+    #     db_token = result.scalar_one_or_none()
+    #     if not db_token:
+    #         return None
 
-        # 检查令牌是否过期，使用带时区的时间
-        now_time = datetime.now(timezone.utc)
-        logger.info('当前时间为：', now_time)
-        logger.info('令牌过期时间为：', db_token.expires)
-        if now_time > db_token.expires:
-            # 删除过期令牌
-            await db.delete(db_token)
-            await db.commit()
-            return None
+    #     # 检查令牌是否过期，使用带时区的时间
+    #     now_time = datetime.now(timezone.utc)
+    #     logger.info('当前时间为：', now_time)
+    #     logger.info('令牌过期时间为：', db_token.expires)
+    #     if now_time > db_token.expires:
+    #         # 删除过期令牌
+    #         await db.delete(db_token)
+    #         await db.commit()
+    #         return None
 
-        # 查询对应的用户
-        result = await db.execute(select(DBUser).where(DBUser.id == db_token.user_id))
-        db_user = result.scalar_one_or_none()
-        if not db_user:
-            return None
+    #     # 查询对应的用户
+    #     result = await db.execute(select(DBUser).where(DBUser.id == db_token.user_id))
+    #     db_user = result.scalar_one_or_none()
+    #     if not db_user:
+    #         return None
 
-        # 转换为响应模型
-        user = User(
-            id=db_user.id,
-            username=db_user.username,
-            email=db_user.email,
-            full_name=db_user.full_name,
-            created_at=db_user.created_at,
-            updated_at=db_user.updated_at,
-            is_active=db_user.is_active
-        )
-        return user
+    #     # 转换为响应模型
+    #     user = User(
+    #         id=db_user.id,
+    #         username=db_user.username,
+    #         email=db_user.email,
+    #         full_name=db_user.full_name,
+    #         created_at=db_user.created_at,
+    #         updated_at=db_user.updated_at,
+    #         is_active=db_user.is_active
+    #     )
+    #     return user
 
 
     async def login_user(self,login_data: LoginRequest,db:AsyncSession) -> Token:
@@ -142,7 +145,7 @@ class AuthService:
 
     async def get_current_user(self,token: str,db:AsyncSession) -> User:
         """获取当前用户"""
-        user = await self.verify_token(token,db=db)
+        user = await get_current_user_from_token(token)
         if not user:
             raise ValueError("无效的令牌")
         return user
@@ -222,10 +225,13 @@ class AuthService:
         await db.refresh(db_user)
 
         # 创建访问令牌
-        access_token = await self.create_access_token(user_id,db)
+        token = create_access_token(
+            data={"sub": user_id},
+            expires_delta=timedelta(minutes=config.security.access_token_expire_minutes)
+        )
 
         return Token(
-            access_token=access_token,
+            access_token=token,
             expires_in=config.security.access_token_expire_minutes * 60
         )
 
@@ -290,9 +296,9 @@ class AuthService:
         )
         return user
 
-    def delete_user(self,user_id: str) -> BaseResponse:
+    async def delete_user(self,user_id: str,db:AsyncSession) -> BaseResponse:
         """删除用户"""
-        db = self.get_db_session()
+        # db = self.get_db_session()
         try:
             # 查询用户
             db_user = db.query(DBUser).filter(DBUser.id == user_id).first()
@@ -310,20 +316,5 @@ class AuthService:
         finally:
             db.close()
 
-
-    async def refresh_token(self,refresh_token: str,db:AsyncSession) -> Token:
-        """刷新令牌"""
-        # 验证refresh_token
-        user = await self.verify_token(refresh_token,db)
-        if not user:
-            raise ValueError("无效的刷新令牌")
-
-        # 创建新的访问令牌
-        access_token = await self.create_access_token(user.id,db)
-
-        return Token(
-            access_token=access_token,
-            expires_in=config.security.access_token_expire_minutes * 60
-        )
 
 auth_service = AuthService()
