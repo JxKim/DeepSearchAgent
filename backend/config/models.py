@@ -1,7 +1,7 @@
 """
 配置数据模型 - 类型安全的配置管理
 """
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Dict, Optional, List, Any
 from enum import Enum
 
@@ -123,7 +123,7 @@ class LLMConfig(BaseModel):
     max_tokens: int = 2000
     timeout: int = 60
     
-    @validator('temperature')
+    @field_validator('temperature')
     def validate_temperature(cls, v):
         if not 0 <= v <= 2:
             raise ValueError('温度值必须在0到2之间')
@@ -178,7 +178,9 @@ class HTTPClientConfig(BaseModel):
 
 # 安全配置模型
 class SecurityConfig(BaseModel):
-    access_token_expire_minutes: int = 30
+    access_token_expire_minutes: int = Field(default=30, description="访问令牌过期时间（分钟）")
+    secret_key: str = Field(..., description="用于JWT签名的密钥")
+    algorithm: str = Field(default="HS256", description="JWT算法")
 
 class StorageConfig(BaseModel):
     storage_type: str = Field(..., description="存储类型，例如'opendal'")
@@ -200,6 +202,13 @@ class MilvusConfig(BaseModel):
     db_name :str = Field(default="smartagent_db", description="Milvus数据库名称")
     collection_name :str = Field(default="smartagent_collection", description="Milvus集合名称")
 
+    
+class MineruConfig(BaseModel):
+    """Mineru配置"""
+    base_url: str = Field(default="http://localhost:8000", description="Mineru API基础URL")
+    parse_endpoint: str = Field(default="/file_parse", description="Mineru解析文件端点")
+    use_vllm: bool = Field(default=False, description="是否使用vLLM")
+    
 class RedisConfig(BaseModel):
     """Redis 配置"""
     host: str = "192.168.10.130"
@@ -232,6 +241,8 @@ class AppConfig(BaseModel):
     embedding : Optional[EmbeddingConfig]=Field(default_factory=EmbeddingConfig)
     # 添加Milvus配置
     milvus : Optional[MilvusConfig]=Field(default_factory=MilvusConfig)
+    # 添加Mineru配置
+    mineru : Optional[MineruConfig]=Field(default_factory=MineruConfig)
     # 添加Redis配置
     redis: Optional[RedisConfig] = None
 

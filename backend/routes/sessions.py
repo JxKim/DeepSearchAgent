@@ -8,7 +8,6 @@ from routes.schema import (
     Session, SessionListItem, Message, MessageCreate,
     SessionListResponse, User, SenderType, ToolRequestResponse, ToolInvokeRequest, SessionCreate,BaseResponse
 )
-# from controllers.auth_controller import verify_token
 from services.session_service import session_service
 from services.auth_service import auth_service
 from config.loguru_config import get_logger

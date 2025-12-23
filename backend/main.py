@@ -9,7 +9,7 @@ import os
 # 导入loguru配置
 from config.loguru_config import get_logger, setup_logging
 from config.loader import get_config
-
+from services.http_client import shutdown_http_client
 # 直接导入路由模块
 from routes import auth, sessions, system
 from db.database import db_startup,db_shutdown
@@ -39,6 +39,7 @@ async def cleanup(app):
         await app.state.checkpointer.client.aclose()
         
     await db_shutdown()
+    await shutdown_http_client()
     logger.info("SmartAgent API 服务已关闭")
 
 @asynccontextmanager

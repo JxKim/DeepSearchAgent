@@ -12,16 +12,19 @@ pg_connection_url = (f"postgresql+psycopg://"
 
 # 创建数据库引擎，使用新创建的数据库
 engine = None
-
+sync_engine = None
 # 创建会话工厂
 # 实际生产环境下,不要使用同步模式
 # SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 SessionLocal = None
+SyncSessionLocal = None
+from sqlalchemy.orm import sessionmaker
 
 async def db_startup():
     logger.info("正在初始化数据库连接池")
-    global engine, SessionLocal
+    global engine, SessionLocal, sync_engine, SyncSessionLocal
     if not engine and not SessionLocal:
+        # 1. 异步引擎初始化
         engine = create_async_engine(
             url=pg_connection_url,
             pool_size=10,  # 连接池大小：保持 10 个活跃连接
@@ -35,6 +38,22 @@ async def db_startup():
             class_=AsyncSession,
             expire_on_commit=False,
         )
+
+        # 2. 同步引擎初始化 (使用 psycopg 驱动，去掉 +asyncpg 如果有的话，但在 pg_connection_url 里是 generic 的)
+        # 注意: pg_connection_url 当前定义为 "postgresql+psycopg://..."，这通常支持同步。
+        # 如果异步使用的是 +asyncpg，同步则不需要。
+        # 检查 pg_connection_url 的定义，它是 postgresql+psycopg://，这在 SQLAlchemy 2.0 中通常指 psycopg 3
+        # psycopg 3 支持同步和异步。
+        
+        sync_engine = create_engine(
+            url=pg_connection_url,
+            pool_size=5, # 后台任务通常不需要太高并发
+            max_overflow=10,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+        )
+        SyncSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=sync_engine)
+
         logger.info(f"数据库连接池初始化完成")
 
 async def db_shutdown():
@@ -42,6 +61,8 @@ async def db_shutdown():
     logger.info("正在关闭数据库连接池")
     if engine:
         await engine.dispose()
+    if sync_engine:
+        sync_engine.dispose()
         logger.info("数据库连接池已关闭")
 
 # 依赖项：获取数据库会话

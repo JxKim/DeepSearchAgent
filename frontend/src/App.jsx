@@ -471,6 +471,7 @@ function App() {
 
   const handleLogout = () => {
     setUser(null);
+    setShowProfile(false);
     localStorage.removeItem('user');
     localStorage.removeItem('token');
     setChatHistory([]);
@@ -555,11 +556,11 @@ function App() {
   const toggleSidebar = () => {
     setIsSidebarCollapsed(!isSidebarCollapsed);
   };
-
+  
   return (
     <div className="app-container">
       {showProfile ? (
-        <UserProfile user={user} onClose={() => setShowProfile(false)} />
+        <UserProfile user={user} onClose={() => setShowProfile(false)} onLogout={handleLogout} />
       ) : (
         <div className="chat-layout">
           {/* 左侧聊天历史记录 - 侧边栏 */}

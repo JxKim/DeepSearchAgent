@@ -7,19 +7,19 @@ import LongTermMemory from './LongTermMemory';
 
 const { Sider, Content } = Layout;
 
-const UserProfile = ({ user, onClose }) => {
+const UserProfile = ({ user, onClose, onLogout }) => {
   const [activeTab, setActiveTab] = useState('basic');
 
   const renderContent = () => {
     switch (activeTab) {
       case 'basic':
-        return <BasicInfo user={user} />;
+        return <BasicInfo user={user} onLogout={onLogout} />;
       case 'knowledge':
         return <KnowledgeBase />;
       case 'memory':
         return <LongTermMemory />;
       default:
-        return <BasicInfo user={user} />;
+        return <BasicInfo user={user} onLogout={onLogout} />;
     }
   };
 

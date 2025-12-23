@@ -91,15 +91,17 @@ http_client:
 
 # 安全配置
 security:
-  access_token_expire_minutes: 30
+  access_token_expire_minutes: "${ACCESS_TOKEN_EXPIRE_MINUTES:30}"
+  secret_key: "${SECRET_KEY}"
+  algorithm: "${ALGORITHM:HS256}"
 
 # tavily配置
 tavily_api_key: "${TAVILY_API_KEY}"
 
 storage:
-  storage_type: "postgres"
-  scheme: "postgresql"
-  file_path: "./data"
+  storage_type: "fs"
+  scheme: "fs"
+  file_path: "./data" 
 
 milvus:
   uri: "${MILVUS_URI:http://localhost:19530}"
@@ -108,8 +110,13 @@ milvus:
   collection_name: "smartagent_collection"
 
 embedding:
-  model: "text-embedding-3-small"
-  provider: "openai"
+  model: "/home/m1881/models/bge-base-zh-v1.5"
+  provider: "self-hosted"
   api_key: "${EMBEDDING_API_KEY}"
   base_url: "${EMBEDDING_BASE_URL:https://api.openai-proxy.org/v1}"
-  dim: 1536
+  dim: 768 # 
+
+mineru:
+  base_url: "${MINERU_BASE_URL:http://localhost:8000}"
+  parse_endpoint: "/file_parse"
+  use_vllm: false

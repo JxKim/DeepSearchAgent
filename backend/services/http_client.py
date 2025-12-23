@@ -18,6 +18,7 @@ logger = get_logger(__name__)
 class HTTPClientManager:
     """HTTP客户端管理器"""
     
+    # 保证单例模式
     _instance: Optional["HTTPClientManager"] = None
     _client: Optional[httpx.AsyncClient] = None
     
@@ -44,23 +45,17 @@ class HTTPClientManager:
         
         # 构建客户端配置
         client_kwargs: Dict[str, Any] = {
-            "timeout": httpx.Timeout(http_config.timeout),
+            "timeout": httpx.Timeout(http_config.timeout), # 配置超时
+            # 配置连接池和保持连接
             "limits": httpx.Limits(
                 max_connections=http_config.max_connections,
                 max_keepalive_connections=http_config.max_keepalive_connections,
                 keepalive_expiry=http_config.keepalive_expiry
             ),
             "headers": http_config.default_headers.copy(),
-            "verify": http_config.verify_ssl
         }
         
-        # 添加代理配置
-        if http_config.proxy:
-            client_kwargs["proxies"] = {"http://": http_config.proxy, "https://": http_config.proxy}
         
-        # 添加证书配置
-        if http_config.cert:
-            client_kwargs["cert"] = http_config.cert
         
         self._client = httpx.AsyncClient(**client_kwargs)
         logger.info("HTTP客户端已创建", 
@@ -107,6 +102,7 @@ class AsyncHTTPClient:
     """异步HTTP客户端包装器，提供便捷的请求方法"""
     
     def __init__(self, base_url: str = ""):
+        # 初始化时，将base_url转换为标准格式（移除末尾的斜杠）
         self.base_url = base_url.rstrip("/")
     
     async def get(self, url: str, **kwargs) -> httpx.Response:
@@ -140,7 +136,7 @@ class AsyncHTTPClient:
             return await client.patch(full_url, **kwargs)
     
     def _build_url(self, url: str) -> str:
-        """构建完整URL"""
+        """使用base_url + endpoint构建完整URL，去除掉endpoint中的前导斜杠"""
         if self.base_url and not url.startswith(("http://", "https://")):
             return f"{self.base_url}/{url.lstrip('/')}"
         return url
