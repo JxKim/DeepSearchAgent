@@ -151,7 +151,7 @@ export function handleApiError(error, options = {}) {
   } = options;
   
   // 记录错误日志（开发环境）
-  if (logError && process.env.NODE_ENV === 'development') {
+  if (logError && import.meta.env?.DEV) {
     console.error('API Error:', error);
   }
   
@@ -192,6 +192,9 @@ export function createSafeApiCall(apiCall, options = {}) {
       const response = await apiCall(...args);
       return response;
     } catch (error) {
+      if (error?.config?._skipAuthHandler === true) {
+        throw error;
+      }
       handleApiError(error, options);
       throw error; // 重新抛出错误，让调用方可以进一步处理
     }

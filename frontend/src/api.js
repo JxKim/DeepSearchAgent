@@ -34,7 +34,12 @@ api.interceptors.response.use(
     // 非2xx范围内的状态码都会触发该函数
     if (error.response) {
       // 服务器返回了错误响应
-      if (error.response.status === 401) {
+      // 如果是登录接口的 401 错误，不进行全局拦截，交由 Login 组件自己处理
+      const isLoginRequest = error.config.url.includes('/auth/login');
+      // 检查是否有自定义的跳过标志
+      const skipAuthHandler = error.config._skipAuthHandler === true;
+      
+      if (error.response.status === 401 && !isLoginRequest && !skipAuthHandler) {
         // 令牌过期或无效，清除本地存储并跳转到登录页面
         localStorage.removeItem('user');
         localStorage.removeItem('token');

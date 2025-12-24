@@ -1,7 +1,7 @@
 // 渲染tab+点击高亮实现
 // lodash 可以实现排序功能
 // 什么叫做获取DOM
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 // 样式控制：行内样式，或者是通过CSS来控制样式，然后去引入，通过className的方式来
 import './App.css';
@@ -47,7 +47,7 @@ function App() {
   // 暂停生成功能相关状态
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentStreamController, setCurrentStreamController] = useState(null);
-  const [pausedMessageId, setPausedMessageId] = useState(null);
+  const [, setPausedMessageId] = useState(null);
 
   // 侧边栏折叠状态
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -119,7 +119,7 @@ function App() {
       setPausedMessageId(null);
       
       message.success('生成已暂停');
-    } catch (error) {
+    } catch {
       // stopGeneration已经内置了错误处理，这里不需要重复处理
     }
   };
@@ -263,7 +263,7 @@ function App() {
                 stopStreaming = true;
                 break;
               }
-            } catch (error) {
+            } catch {
               // 解析SSE数据失败，继续处理下一行，避免整个应用崩溃
               // 这里不显示用户提示，因为这是内部数据处理错误
             }
@@ -394,7 +394,7 @@ function App() {
                   ));
                 }
               }
-            } catch (error) {
+            } catch {
               // 解析SSE数据失败，继续处理下一行，避免整个应用崩溃
               // 这里不显示用户提示，因为这是内部数据处理错误
             }
@@ -489,7 +489,7 @@ function App() {
         setUser(parsedUser);
         // 如果用户已登录，获取会话列表
         fetchChatSessions();
-      } catch (error) {
+      } catch {
         // 解析用户信息失败，清除本地存储
         localStorage.removeItem('user');
         localStorage.removeItem('token');

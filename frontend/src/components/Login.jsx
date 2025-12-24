@@ -1,20 +1,15 @@
 import { useState } from 'react';
 import api from '../api';
-import { handleApiError } from '../utils/errorHandler';
-import { Modal, Form, Input, Button, message, Switch } from 'antd';
+import { Modal, Form, Input, Button, message } from 'antd';
 import { UserOutlined, LockOutlined, CloseOutlined } from '@ant-design/icons';
 import './Login.css';
 
 const Login = ({ onLogin, onClose }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (values) => {
     setLoading(true);
-    setError('');
 
     try {
       let response;
@@ -32,6 +27,9 @@ const Login = ({ onLogin, onClose }) => {
         response = await api.post('/auth/login', {
           username: values.username,
           password: values.password
+        }, { 
+          // 告诉拦截器跳过全局的认证错误处理，防止自动刷新
+          _skipAuthHandler: true 
         });
         message.success('登录成功！');
       }
@@ -63,12 +61,21 @@ const Login = ({ onLogin, onClose }) => {
       onLogin(userData);
       onClose();
     } catch (err) {
-      // 使用统一的错误处理系统
-      handleApiError(err, { 
-        showModal: false,
-        showMessage: true,
-        customMessage: '认证失败，请检查用户名和密码'
-      });
+      console.error('Login failed:', err);
+      // 完全接管错误处理，不调用 handleApiError 以防止触发全局的刷新逻辑
+      if (err.response) {
+        if (err.response.status === 401 || err.response.status === 403) {
+          message.error('登录失败：用户名或密码错误');
+        } else if (err.response.data && err.response.data.detail) {
+          message.error(`登录失败：${err.response.data.detail}`);
+        } else {
+          message.error('登录失败，请稍后重试');
+        }
+      } else if (err.request) {
+        message.error('网络错误，无法连接到服务器');
+      } else {
+        message.error('发生未知错误');
+      }
     } finally {
       setLoading(false);
     }
