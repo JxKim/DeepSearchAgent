@@ -20,7 +20,7 @@ async def get_redis_checkpointer():
     if not HAS_REDIS:
         logger.info("ℹ️ 未安装 Redis 库，使用 MemorySaver")
         return MemorySaver()
-
+  
     try:
         # 读取配置
         config = get_config()
@@ -126,10 +126,15 @@ async def stream_workflow(session_id: str, user_id: str, original_query: str, th
             if kind == "on_chat_model_stream":
                 # 获取当前生成的 token
                 content = event["data"]["chunk"].content
-                if content:
+                
+                # 获取事件 tags
+                tags = event.get("tags", [])
+                
+                # 只流式传输带有 node:llm_response 标签的输出
+                if content and "node:llm_response" in tags:
                     yield {
                         "event": "llm_stream",
-                        "node": "llm_response", # 假设主要在 llm_response 节点生成
+                        "node": "llm_response", 
                         "data": content
                     }
             

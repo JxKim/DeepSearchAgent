@@ -172,17 +172,18 @@ function App() {
 
       // 使用fetch API直接处理流式响应，不使用axios
       const baseURL = import.meta.env.VITE_API_URL;
-      const response = await fetch(`${baseURL}/sessions/${selectedSessionId}/messages/`, {
+      const response = await fetch(`${baseURL}/sessions/${selectedSessionId}/workflow_stream?query=${encodeURIComponent(newMessage)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({
-          text: newMessage,
-          metadata: {},
-          sender: 'user'
-        }),
+        // workflow_stream 接口不需要 body，参数在 URL 中
+        // body: JSON.stringify({
+        //   text: newMessage,
+        //   metadata: {},
+        //   sender: 'user'
+        // }),
         signal: abortController.signal,
         // credentials: 'include', // 发送凭据，处理CORS
         // mode: 'cors' // 显式设置为cors模式
@@ -214,58 +215,157 @@ function App() {
         for (const line of lines) {
           if (stopStreaming) break;
           
-          if (line.trim().startsWith('data :')) {
-            // 解析SSE数据行，格式：data : {"ai_message": "内容"} 或 {"func_call": {"to": "...", "subject": "...", "body": "..."}}
+          if (line.trim().startsWith('data:')) {
+            // 解析SSE数据行
+            const dataStr = line.trim().slice(5).trim(); // 去掉 "data:" 前缀
+            
+            // 检查是否结束
+            if (dataStr === '[DONE]') {
+              stopStreaming = true;
+              break;
+            }
+            
             try {
-              const jsonStr = line.trim().slice(7); // 去掉 "data : " 前缀
-              const data = JSON.parse(jsonStr);
+              const data = JSON.parse(dataStr);
               
-              if (data.ai_message) {
-                // 更新accumulatedText变量
-                accumulatedText += data.ai_message;
+              // 1. 处理 LLM 文本流 (llm_stream)
+              if (data.event === 'llm_stream') {
+                const textChunk = data.data;
+                accumulatedText += textChunk;
                 
-                // 只在消息不重复时添加内容
+                // 更新当前消息内容
                 setCurrentChat(prev => prev.map(msg => {
                   if (msg.id === aiMessageId) {
-                    const updatedSections = [...msg.sections];
-                    let lastSection = updatedSections[updatedSections.length - 1];
+                    const sections = msg.sections;
+                    const lastSectionIndex = sections.length - 1;
+                    const lastSection = sections[lastSectionIndex];
+                    
+                    let newSections;
                     
                     if (lastSection && lastSection.type === 'ai_message') {
-                      // 检查当前消息片段是否已经包含在现有内容中，避免重复
-                      if (!lastSection.content.includes(data.ai_message)) {
-                        lastSection.content += data.ai_message;
-                      }
+                      // 关键修复：不可变更新。创建一个新的 section 对象，而不是直接修改引用。
+                      // 解决字符重复问题 (DeepDeepSeSeekeek)
+                      const newLastSection = {
+                        ...lastSection,
+                        content: lastSection.content + textChunk
+                      };
+                      newSections = [
+                        ...sections.slice(0, lastSectionIndex),
+                        newLastSection
+                      ];
                     } else {
-                      // 否则创建一个新的ai_message section
-                      updatedSections.push({ type: 'ai_message', content: data.ai_message });
+                      newSections = [
+                        ...sections,
+                        { type: 'ai_message', content: textChunk }
+                      ];
                     }
-                    
-                    return { ...msg, sections: updatedSections };
+                    return { ...msg, sections: newSections };
                   }
                   return msg;
                 }));
-              } else if (data.tool_message) {
-                // 将tool_message添加到sections数组中
-                setCurrentChat(prev => prev.map(msg => 
-                  msg.id === aiMessageId 
-                    ? { 
-                        ...msg, 
-                        sections: [...msg.sections, { type: 'tool_message', content: data.tool_message }] 
+              } 
+              // 2. 处理节点状态更新 (node_update) - 作为工具消息展示
+              else if (data.event === 'node_update') {
+                const nodeName = data.node;
+                const nodeData = data.data; // 这里的 data 是节点的输出字典
+                // 排除不展示的节点
+                if (nodeName !== 'llm_response' && nodeName !== 'convergence_node' && nodeName !== 'long_term_memory_import') {
+                  let toolContent = '';
+                  let toolTitle = '工具消息';
+                  
+                  // 根据节点类型定制展示内容
+                  switch (nodeName) {
+                    case 'memory_summary':
+                      toolTitle = '长期记忆更新';
+                      // 只展示 memory_summary 字段，不展示对话历史
+                      toolContent = `**更新后的记忆摘要**\n\n${nodeData.memory_summary || '无摘要生成'}`;
+                      break;
+
+                    case 'title_generate':
+                      toolTitle = '生成会话标题';
+                      const newTitle = nodeData.conversation_title;
+                      toolContent = `**生成会话标题**\n\n${newTitle || '未生成标题'}`;
+                      
+                      // 实时更新会话列表中的标题
+                      if (newTitle) {
+                        setChatHistory(prev => prev.map(session => 
+                          session.id === selectedSessionId 
+                            ? { ...session, title: newTitle }
+                            : session
+                        ));
                       }
-                    : msg
-                ));
-              } else if (data.func_call && typeof data.func_call === 'object') {
-                // 检测到函数调用请求，显示弹窗
-                setCurrentFuncCall(data.func_call);
-                setShowFuncCallModal(true);
-                
-                // 停止当前流式响应处理，因为后续响应会由handleToolCall处理
-                stopStreaming = true;
-                break;
+                      break;
+                      
+                    case 'intention_recognition':
+                      toolTitle = '意图识别';
+                      const intents = [];
+                      if (nodeData.rag_use) intents.push('知识库检索');
+                      if (nodeData.tavily_use) intents.push('网络搜索');
+                      const intentStr = intents.length > 0 ? intents.join(' & ') : '普通问答';
+                      toolContent = `**意图识别**\n\n识别到${intentStr}的意图`;
+                      break;
+                      
+                    case 'tavily_process':
+                      toolTitle = '网络搜索 (Tavily)';
+                      let searchOutput = nodeData.tavily_output;
+                      let formattedResult = '';
+
+                      // 处理搜索结果展示，提取 content
+                      if (searchOutput && typeof searchOutput === 'object' && Array.isArray(searchOutput.results)) {
+                        formattedResult = searchOutput.results.map((item, index) => {
+                          return `**${index + 1}. [${item.title}](${item.url})**\n> ${item.content}\n`;
+                        }).join('\n');
+                      } else if (typeof searchOutput === 'string') {
+                          // 尝试解析可能为字符串的 JSON
+                          try {
+                              const parsed = JSON.parse(searchOutput);
+                              if (parsed && Array.isArray(parsed.results)) {
+                                  formattedResult = parsed.results.map((item, index) => {
+                                      return `**${index + 1}. [${item.title}](${item.url})**\n> ${item.content}\n`;
+                                  }).join('\n');
+                              } else {
+                                  formattedResult = searchOutput;
+                              }
+                          } catch (e) {
+                              formattedResult = searchOutput;
+                          }
+                      } else {
+                        formattedResult = JSON.stringify(searchOutput, null, 2);
+                      }
+                      
+                      toolContent = `**网络搜索 (Tavily)**\n\n${formattedResult || '未找到相关结果'}`;
+                      break;
+                      
+                    default:
+                      toolTitle = `执行步骤: ${nodeName}`;
+                      // 默认展示方式
+                      let details = '';
+                      if (typeof nodeData === 'object') {
+                          details = JSON.stringify(nodeData, null, 2);
+                      } else {
+                          details = String(nodeData);
+                      }
+                      toolContent = `**执行步骤: ${nodeName}**\n\n\`\`\`json\n${details}\n\`\`\``;
+                  }
+
+                  setCurrentChat(prev => prev.map(msg => 
+                    msg.id === aiMessageId 
+                      ? { 
+                          ...msg, 
+                          sections: [...msg.sections, { type: 'tool_message', content: toolContent, title: toolTitle }] 
+                        }
+                      : msg
+                  ));
+                }
               }
+              // 3. 处理错误
+              else if (data.event === 'error') {
+                message.error(`生成出错: ${data.error}`);
+              }
+              
             } catch (error) {
-              // 解析SSE数据失败，继续处理下一行，避免整个应用崩溃
-              // 这里不显示用户提示，因为这是内部数据处理错误
+              // 解析SSE数据失败
+              console.warn('解析SSE数据失败:', error, dataStr);
             }
           }
         }
@@ -754,12 +854,16 @@ function App() {
                                             className="tool-messages-toggle"
                                             onClick={() => toggleToolMessages(`${message.id}-tool-${index}`)}
                                           >
-                                            {expandedToolMessages[`${message.id}-tool-${index}`] ? '▼ 收起工具消息' : '▶ 查看工具消息'}
+                                            {expandedToolMessages[`${message.id}-tool-${index}`] ? `▼ 收起${section.title || '工具消息'}` : `▶ 查看${section.title || '工具消息'}`}
                                           </button>
                                           {expandedToolMessages[`${message.id}-tool-${index}`] && (
                                             <div className="tool-messages-content">
                                               <div className="tool-message">
-                                                <pre>{JSON.stringify(section.content, null, 2)}</pre>
+                                                <ReactMarkdown>
+                                                  {typeof section.content === 'string' 
+                                                    ? section.content 
+                                                    : JSON.stringify(section.content, null, 2)}
+                                                </ReactMarkdown>
                                               </div>
                                             </div>
                                           )}

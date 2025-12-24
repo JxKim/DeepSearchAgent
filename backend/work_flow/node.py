@@ -1,4 +1,5 @@
 from work_flow.state import OverAllState
+from langchain_core.runnables import RunnableConfig
 
 
 async def long_term_memory_import(state: OverAllState) -> dict:
@@ -25,7 +26,11 @@ async def long_term_memory_import(state: OverAllState) -> dict:
     # 存在 -> 说明是从 MemorySaver (RAM) 恢复的热数据，直接跳过 DB 读取
     if state.get("conversation_history"):
         print(f"✅ [内存命中] 检测到活跃会话状态 (历史条数: {len(state['conversation_history'])})，跳过数据库导入。")
-        return {}
+        # 即使命中内存，也需要返回当前状态中的数据，以便前端展示
+        return {
+            "memory_summary": state.get("memory_summary", ""),
+            # conversation_history 已经在 state 中，不返回也没关系，但为了保持一致性可以返回
+        }
     
     # 不存在 -> 说明是冷启动（新会话或服务刚重启），需要从数据库加载
     print(f"⚠️ [内存未命中] 正在从数据库加载会话 {session_id} 的历史记录...")
@@ -112,6 +117,15 @@ async def title_generate(state: OverAllState) -> dict:
     title = response["messages"][-1].content.strip()
     print(f"生成的标题: {title}")
 
+    # 更新数据库中的会话标题
+    session_id = state.get("session_id")
+    if session_id:
+        try:
+            from services.session_service import session_service
+            await session_service.update_session_title(session_id, title)
+        except Exception as e:
+            print(f"更新会话标题失败: {e}")
+
     return {"conversation_title": title}
 
 async def intention_recognition(state: OverAllState) -> dict:
@@ -172,12 +186,13 @@ def convergence_node(state: OverAllState) -> dict:
     # 等待前序任务完成，继续传递工作流
     return {}
 
-async def llm_response(state: OverAllState) -> dict:
+async def llm_response(state: OverAllState, config: RunnableConfig) -> dict:
     """
       生成回复节点
 
       Args:
          state: 当前状态
+         config: 运行时配置
 
       Returns:
          dict: 更新后的状态
@@ -228,8 +243,14 @@ async def llm_response(state: OverAllState) -> dict:
     )
 
     # 3. 调用 Agent 生成回复
+    # 添加 tag 以便在流式输出中识别
+    child_config = config.copy()
+    if "tags" not in child_config:
+        child_config["tags"] = []
+    child_config["tags"].append("node:llm_response")
+    
     agent = await get_agent(system_prompt=prompt)
-    response = await agent.ainvoke({"messages": [HumanMessage(content="请生成回答")]})
+    response = await agent.ainvoke({"messages": [HumanMessage(content="请生成回答")]}, config=child_config)
     
     final_answer = response["messages"][-1].content.strip()
     print(f"LLM回复生成完成，长度: {len(final_answer)}")
@@ -282,10 +303,13 @@ async def memory_summary(state: OverAllState) -> dict:
         # 获取短期会话记忆 (List[Tuple[str, str]])
         conversation_history = state.get("conversation_history", [])
         
+        # 将本轮对话临时加入到历史中，用于生成摘要
+        # 注意：这里只是为了生成 prompt，真正的状态更新在最后
+        current_history_for_summary = conversation_history + [(original_query, final_answer)]
+        
         # 将 conversation_history 格式化为字符串
-        # 既然 conversation_history 已经包含了本轮对话，直接遍历即可
         history_str = ""
-        for i, (q, a) in enumerate(conversation_history):
+        for i, (q, a) in enumerate(current_history_for_summary):
             history_str += f"轮次 {i+1}:\n用户: {q}\n助手: {a}\n\n"
         
         # 构造 Prompt

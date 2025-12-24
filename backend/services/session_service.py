@@ -7,7 +7,7 @@ from sqlalchemy import select,delete
 from routes.schema import MessageCreate, Session, SessionStatus
 from db.db_models import Session
 from services.agent import get_agent
-from langchain_core.messages import BaseMessage, ToolMessage
+from langchain_core.messages import BaseMessage, ToolMessage, HumanMessage, AIMessage
 
 from config.loguru_config import get_logger
 
@@ -107,18 +107,39 @@ class SessionService:
             ) for session in db_sessions
         ]
 
-    async def get_messages(self, session_id: str) -> List[BaseMessage]:
+    async def get_messages(self, session_id: str, db: AsyncSession) -> List[BaseMessage]:
         """
-        通过agent获取到消息列表
+        从数据库获取会话历史消息
         """
-        await self.init_agent()
-        config = {
-            "configurable":
-                {"thread_id":session_id}
-        }
-        state_res = await self.agent.aget_state(config=config)
-
-        return state_res.values['messages'] if state_res and state_res.values else []
+        from db.db_models import ConversationHistory
+        
+        # 从数据库查询历史记录
+        result = await db.execute(
+            select(ConversationHistory)
+            .where(ConversationHistory.session_id == session_id)
+            .order_by(ConversationHistory.created_at.asc())
+        )
+        history_records = result.scalars().all()
+        
+        messages = []
+        for record in history_records:
+            # 重构 HumanMessage
+            if record.user_input:
+                messages.append(HumanMessage(
+                    content=record.user_input, 
+                    id=f"{record.id}_user", # 构造唯一的ID
+                    additional_kwargs={"created_at": record.created_at.isoformat()}
+                ))
+            
+            # 重构 AIMessage
+            if record.agent_output:
+                messages.append(AIMessage(
+                    content=record.agent_output,
+                    id=f"{record.id}_agent", # 构造唯一的ID
+                    additional_kwargs={"created_at": record.created_at.isoformat()}
+                ))
+                
+        return messages
 
     async def add_message_to_session(self,session_id: str, user_id: str, message_data: MessageCreate,db: AsyncSession):
         """
@@ -226,8 +247,35 @@ class SessionService:
         :param session_id: Description
         :type session_id: str
         """
+        from db.db_models import ConversationHistory, SessionSummary
+        
+        # 先删除关联表数据，解决外键约束问题
+        await db.execute(delete(ConversationHistory).where(ConversationHistory.session_id == session_id))
+        await db.execute(delete(SessionSummary).where(SessionSummary.session_id == session_id))
+        
+        # 最后删除会话
         await db.execute(delete(Session).where(Session.id == session_id))
         await db.commit()
+
+    async def update_session_title(self, session_id: str, title: str):
+        """
+        更新会话标题 (独立事务)
+        """
+        from db.database import SessionLocal
+        from sqlalchemy import update
+        
+        async with SessionLocal() as db:
+            try:
+                await db.execute(
+                    update(Session)
+                    .where(Session.id == session_id)
+                    .values(title=title, updated_at=datetime.now())
+                )
+                await db.commit()
+                logger.info(f"会话 {session_id} 标题已更新为: {title}")
+            except Exception as e:
+                logger.error(f"更新会话标题失败: {e}")
+                await db.rollback()
 
         
         

@@ -16,7 +16,7 @@ from config.loader import get_config
 from config.loguru_config import get_logger
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from db.db_models import KnowledgeFile, KnowledgeChunk, KnowledgeCategory
+from db.db_models import KnowledgeFile, KnowledgeChunk , KnowledgeCategory
 import uuid
 import time
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -60,10 +60,7 @@ class KnowledgeService:
         self._milvus_client = None
         
         # 同步的milvus client，在解析任务当中使用
-        self.sync_milvus_client = MilvusClient(
-            uri=config.milvus.uri,
-            token=config.milvus.token
-        )
+        self._sync_milvus_client = None
         
         
         
@@ -71,7 +68,7 @@ class KnowledgeService:
             self.embedding_model = HuggingFaceEmbeddings(model_name=config.embedding.model_path)
         else:
             self.embedding_model = init_embeddings(
-                model=config.embedding.model, 
+                model=config.embedding.model_path, 
                 provider=config.embedding.provider, 
                 api_key=config.embedding.api_key, 
                 base_url=config.embedding.base_url)
@@ -79,6 +76,23 @@ class KnowledgeService:
         self.parse_executor = ThreadPoolExecutor(max_workers=10)
 
         self.milvus_collection_name = config.milvus.collection_name
+
+    @property
+    def sync_milvus_client(self):
+        if self._sync_milvus_client is None:
+            try:
+                self._sync_milvus_client = MilvusClient(
+                    uri=config.milvus.uri,
+                    token=config.milvus.token
+                )
+            except Exception as e:
+                logger.error(f"Failed to initialize sync Milvus client: {e}")
+                # Return None or re-raise depending on requirements. 
+                # For now, let's log and re-raise to be safe if it's critical.
+                # Or better, just log and let the caller handle the AttributeError/NoneType error if they try to use it.
+                # But to keep consistent with property behavior, let's try to return None if failed.
+                return None
+        return self._sync_milvus_client
 
     @property
     def milvus_client(self):

@@ -142,9 +142,9 @@ async def add_message(session_id: str, message_data: MessageCreate, current_user
     return StreamingResponse(message_generator,media_type="text/event-stream",)
 
 @router.get("/{session_id}/messages/", response_model=List[Message])
-async def get_messages(session_id: str, current_user: User = Depends(get_current_user_from_token)):
+async def get_messages(session_id: str, current_user: User = Depends(get_current_user_from_token), db=Depends(get_db)):
     """获取会话中的所有消息"""
-    messages = await session_service.get_messages(session_id)
+    messages = await session_service.get_messages(session_id, db=db)
     if messages is None:
         raise HTTPException(status_code=404, detail="会话未找到")
     message_list = []
@@ -156,7 +156,7 @@ async def get_messages(session_id: str, current_user: User = Depends(get_current
                 id=message.id,
                 session_id=session_id,
                 sender=SenderType.USER if type(message)==HumanMessage else SenderType.AGENT,
-                timestamp=None,
+                timestamp=message.additional_kwargs.get("created_at"), # 使用DB中记录的时间
                 text=message.content if message.content else ' ',
                 metadata=message.response_metadata
             )

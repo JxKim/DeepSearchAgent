@@ -55,7 +55,7 @@ class AgentPrompts:
 ## 1. 用户问题
 {user_input}
 
-## 2. 长期记忆摘要
+## 2. 长期记忆内容
 {memory_summary}
 
 ## 3. 最近三轮对话
@@ -97,5 +97,3 @@ class AgentPrompts:
 
 请生成更新后的摘要：
 """
-
-

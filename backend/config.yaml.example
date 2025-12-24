@@ -49,7 +49,14 @@ llm:
   max_tokens: 2000
   timeout: 60
 
-
+# 轻量快速响应LLM配置
+lite-llm:
+  api_key: "${LITELLM_API_KEY}"
+  base_url: "${LITELLM_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}"
+  model: "qwen3-32b"
+  temperature: 0.7
+  max_tokens: 2000
+  timeout: 60
 
 postgres_database:
   host: "localhost"
@@ -83,6 +90,38 @@ http_client:
 # 安全配置
 security:
   access_token_expire_minutes: 30
-
+  secret_key: "${SECRET_KEY}"
+  algorithm: "${ALGORITHM:HS256}"
+  
 # tavily配置
 tavily_api_key: "tvly-dev-xxxxxx"
+
+storage:
+  storage_type: "fs"
+  scheme: "fs"
+  file_path: "./data" 
+
+milvus:
+  uri: "${MILVUS_URI:http://localhost:19530}"
+  token: "${MILVUS_TOKEN:root:Milvus}"
+  db_name: "smartagent_db"
+  collection_name: "smartagent_collection"
+
+embedding:
+  provider: "${EMBEDDING_PROVIDER}"
+
+  model_path: "${EMBEDDING_MODEL_PATH}"
+  api_key: "${EMBEDDING_API_KEY}"
+  base_url: "${EMBEDDING_BASE_URL}"
+  dim: "${EMBEDDING_MODEL_DIM:768}" # 
+
+mineru:
+  base_url: "${MINERU_BASE_URL:http://localhost:8000}"
+  parse_endpoint: "/file_parse"
+  use_vllm: false
+
+redis:
+  host: "${REDIS_HOST:localhost}"
+  port: "${REDIS_PORT:6379}"
+  password: "${REDIS_PASSWORD}"
+  db: "${REDIS_DB:0}"

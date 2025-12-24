@@ -5,6 +5,8 @@ from services.agent.tools import send_email, save_report_to_lark, search_web, ge
 from pathlib import Path
 from services.agent.prompts import major_agent_prompt
 from config.loader import get_config
+from config.models import LLMProvider
+
 config = get_config()
 
 async def get_agent():
